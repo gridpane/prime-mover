@@ -4,7 +4,7 @@
 
 # Universal WordPress Migration Assistant
 
-# Copyright 2018 Gridpane.com - K. Patrick Gallagher
+# Copyright 2018 PrimeMover.io - K. Patrick Gallagher
 
 # Easily move WordPress sites between two different servers managed by GridPane, ServerPilot, RunCloud and Others...
 
@@ -1687,4 +1687,4 @@ else
 
 fi
 
-# Copyright 2017, 2018 PrimeMover.io - K. Patrick Gallagher
+# Copyright 2018 PrimeMover.io - K. Patrick Gallagher

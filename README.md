@@ -36,7 +36,7 @@ This all automatigically works if you're using GridPane because we (try, at leas
 
 I'm absolutely NOT going to build any version of this that doesn't explicitly use SSH keys. Knock yourself out. 
 
-Currently - version Nothing Dot Zero Zero Zero One - February 14th, 2018, this will only work to migrate sites out of EasyEngine, ServerPilot, RunCloud, and SOME CPanel nodes and push this sites IN to GridPane managed servers.
+Currently - version Nothing Dot Zero Zero Zero One - February 14th, 2018 (Happy Valentines Day!!! :-|) this will only work to migrate sites out of EasyEngine, ServerPilot, RunCloud, and SOME CPanel nodes and push this sites IN to GridPane managed servers.
 
 But coming very soon - end of the week probably - I'll reintegrate all of my original code for moving things between ServerPilot nodes and from ServerPilot to already provisioned sites at RunCloud. And, obviously, all the various back and forth versions of that. 
 

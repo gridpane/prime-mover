@@ -61,6 +61,7 @@ MORE DOCUMENTATION COMING SOON
 Copyright 2018 - K. Patrick Gallagher
 
 <p align="center">
-  Sponsored by GridPane.com
+  <strong>Sponsored by GridPane.com</strong>
+  <br>
   <img src="https://my.gridpane.com/img/mono-logo.png" height="100">
   </p>

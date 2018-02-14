@@ -16,9 +16,9 @@ Best of luck! Drop me a line at patrick at gridpane dot com
 
 # INSTALL
 
-This documentation is coming soon. 
+More documentation on this will be forthcoming. 
 
-Basically: 
+But basically: 
 
 1.) Download primemover.sh
 
@@ -30,9 +30,11 @@ Done.
 
 # BIG PICTURE
 
-In order for this to work (for ServerPilot and RunCloud) you need to have already created SSH keys on both your source server and your destination server. You need to have also already added these keys between your source and destination server.
+In order for this to work (for ServerPilot and RunCloud) you will need to have already created SSH keys on both your source server and your destination server. You need to have also already added these keys between your source and destination server.
 
-This all automatigically works if you're using GridPane because we kick all of the asses.
+This all automatigically works if you're using GridPane because we (try, at least, to) kick all of the asses.
+
+I'm absolutely NOT going to build any version of this that doesn't explicitly use SSH keys. Knock yourself out. 
 
 Currently - version Nothing Dot Zero Zero Zero One - February 14th, 2018, this will only work to migrate sites out of EasyEngine, ServerPilot, RunCloud, and SOME CPanel nodes and push this sites IN to GridPane managed servers.
 

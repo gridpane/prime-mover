@@ -1,4 +1,4 @@
-# Prime Mover (Coming soon at PrimeMover.io) 
+# Prime Mover (PrimeMover.io) 
 
 Bash script(s) to facilitate migration of WordPress sites into and out of servers managed by GridPane, ServerPilot, RunCloud, and (possibly) others. 
 

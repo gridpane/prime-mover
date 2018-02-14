@@ -2,8 +2,6 @@
 
 Bash script(s) to facilitate migration of WordPress sites into and out of servers managed by GridPane, ServerPilot, RunCloud, and (possibly) others. 
 
-Copyright 2018 - K. Patrick Gallagher
-
 # CAUTION!!!
 
 This is all very VERY aplha right now. Use at your own risk.
@@ -58,4 +56,7 @@ Building new sites on ServerPilot is super simple because their API is well done
 
 The syntax for that (moving a site to RC) will be "primemover $SOURCEURL (ALL) $DESTIP $DESTPATH" (This ins't implemented yet)
 
-# MORE DOCUMENTATION COMING SOON!!!
+MORE DOCUMENTATION COMING SOON
+
+Copyright 2018 - K. Patrick Gallagher
+

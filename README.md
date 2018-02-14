@@ -63,5 +63,5 @@ Copyright 2018 - K. Patrick Gallagher
 <p align="center">
   <strong>Sponsored by GridPane.com</strong>
   <br>
-  <img src="https://my.gridpane.com/img/mono-logo.png" height="100">
+  <img src="https://my.gridpane.com/img/mono-logo.png" height="50">
   </p>

@@ -1664,10 +1664,13 @@ then
 		username=$(basename $username)
 		
 		chown -R $username:$username /srv/users/$username/apps/$appname/public/*
-	
+	else
+		SPtoSP
+	fi
 else
-	SPtoSP
+	echo "What are we doing???"
 fi
+
 
 
 # Copyright 2018 PrimeMover.io - K. Patrick Gallagher

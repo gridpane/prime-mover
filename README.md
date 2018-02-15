@@ -60,4 +60,5 @@ MORE DOCUMENTATION COMING SOON
 
 Copyright 2018 - K. Patrick Gallagher
 
+<p align="center"><strong>Sponsored by <a href="https://gridpane.com">GridPane.com</a></p><br>
 <p align="center"><a href="https://gridpane.com"><img class="aligncenter" src="https://gridpane.com/wp-content/uploads/2018/02/gridpane-logo-spartan-300x57.png" alt="" width="300" height="57" /></a></p>

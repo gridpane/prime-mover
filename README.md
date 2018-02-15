@@ -4,7 +4,7 @@ Bash script(s) to facilitate migration of WordPress sites into and out of server
 
 # CAUTION!!!
 
-This is all very VERY aplha right now. Use at your own risk.
+This is all very VERY alpha right now. Use at your own risk.
 
 This is a highly neutered/smashed together version of the MigrateSafely migration tool we use internally at GridPane.com
 

@@ -537,7 +537,9 @@ SPtoSP() {
 			  
 				echo "Running remote restoration process..."
 
-				ssh root@$targetIP "sleep 3 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public/ && tableprefix=$(cat /srv/users/$username/apps/$appname/public/table.prefix) && sed -i "/$table_prefix =/c\\$tableprefix" /srv/users/$username/apps/$appname/public/wp-config.php && wp db import database.sql --allow-root && rm database.gz && rm table.prefix && chown -R $username:$username /srv/users/$username/apps/$appname/public/* && /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz" 
+				#ssh root@$targetIP "sleep 3 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public/ && tableprefix=$(cat /srv/users/$username/apps/$appname/public/table.prefix) && sed -i "/$table_prefix =/c\\$tableprefix" /srv/users/$username/apps/$appname/public/wp-config.php && wp db import database.sql --allow-root && rm database.gz && rm table.prefix && chown -R $username:$username /srv/users/$username/apps/$appname/public/* && /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz"
+				
+				ssh root@$targetIP "sleep 3 && wget -o /usr/local/bin/primemover https://github.com/gridpane/prime-mover/blob/master/primemover.sh && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore"
 				
 				sleep 5 
 				
@@ -1617,6 +1619,55 @@ DoWork() {
 
 }
 
-SPtoSP
+if [[ $1 == "restore" ]]
+then
+	tableprefix=$(cat table.prefix)
+	sed -i "/$table_prefix =/c\\$tableprefix" wp-config.php
+	echo "Prefixes Fixed"
+
+	if [ -f database.sql ]
+	then
+		wp db import database.sql --allow-root
+	elif [ -f database.gz ]
+	then
+		tar -xzf database.gz
+		wp db import database.sql --allow-root
+	else
+		echo "Error! Database backup file missing!"
+		exit 187;
+	fi
+
+	echo "Database Imported... We Think"
+	
+	if [ -f database.sql ]
+	then
+		rm database.sql
+	elif [ -f database.gz ]
+	then
+		rm database.gz
+	else
+		echo "No DB file to remove!"
+	fi
+
+	rm table.prefix
+	
+	currdir=$PWD
+	appname=$(basename $currdir)
+	
+	if [[ $appname == "public" ]]
+	then
+		cd ..
+		currdir=$PWD
+		appname=$(basename $currdir)
+		cd ../..
+		username=$PWD
+		username=$(basename $username)
+		
+		chown -R $username:$username /srv/users/$username/apps/$appname/public/*
+	
+else
+	SPtoSP
+fi
+
 
 # Copyright 2018 PrimeMover.io - K. Patrick Gallagher

@@ -112,7 +112,7 @@ ServerPilotShell() {
 	fi
 
 }
-ServerPilotShell
+
 
 # Check is SSH key present, if not make it so... This currently only applies to migrating IN to GridPane servers... 
 # Disabled by default because while I may be a total egotistical prick I recognize that you're MUCH more likely to be running on a SP or RC node than a GridPane managed box.
@@ -539,7 +539,7 @@ SPtoSP() {
 
 				#ssh root@$targetIP "sleep 3 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public/ && tableprefix=$(cat /srv/users/$username/apps/$appname/public/table.prefix) && sed -i "/$table_prefix =/c\\$tableprefix" /srv/users/$username/apps/$appname/public/wp-config.php && wp db import database.sql --allow-root && rm database.gz && rm table.prefix && chown -R $username:$username /srv/users/$username/apps/$appname/public/* && /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz"
 				
-				ssh root@$targetIP "sleep 3 && wget -o /usr/local/bin/primemover https://github.com/gridpane/prime-mover/blob/master/primemover.sh && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore"
+				ssh root@$targetIP "sleep 3 && wget https://github.com/gridpane/prime-mover/archive/master.zip && unzip master.zip && mv prime-mover-master/primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore"
 				
 				sleep 5 
 				
@@ -1665,10 +1665,11 @@ then
 		
 		chown -R $username:$username /srv/users/$username/apps/$appname/public/*
 	else
-		SPtoSP
+		echo "This is not a restore..."
 	fi
 else
-	echo "What are we doing???"
+	ServerPilotShell
+	SPtoSP
 fi
 
 

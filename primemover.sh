@@ -381,7 +381,7 @@ SPtoSP() {
 	sed -i -e "1d" /var/tmp/primemover/server-names.tmp
 	sed -i -e "1d" /var/tmp/primemover/server-ips.txt 
 	sed -i -e "1d" /var/tmp/primemover/server-ids.txt
-	while IFS=" " read -r entrydetail
+	while IFS= read -r entrydetail
 	do
 		rownumber=$((rownumber+1))
 		currentIP=$(cat /var/tmp/primemover/server-ips.txt | awk '{print $"$ipaddressCOL"; exit}')
@@ -451,7 +451,7 @@ SPtoSP() {
 	then
 		sed '1d' /var/tmp/primemover/source-applications.txt > /var/tmp/primemover/tmpfile; mv /var/tmp/primemover/tmpfile /var/tmp/primemover/source-applications.txt
 		echo "Copying SP Sites..."
-		while IFS=" " read -r word1 word2 word3 word4 word5 word6
+		while IFS= read -r word1 word2 word3 word4 word5 word6
 		do
 		  
 			GetSPUserAppDetails
@@ -539,9 +539,9 @@ SPtoSP() {
 
 				#ssh root@$targetIP "sleep 3 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public/ && tableprefix=$(cat /srv/users/$username/apps/$appname/public/table.prefix) && sed -i "/$table_prefix =/c\\$tableprefix" /srv/users/$username/apps/$appname/public/wp-config.php && wp db import database.sql --allow-root && rm database.gz && rm table.prefix && chown -R $username:$username /srv/users/$username/apps/$appname/public/* && /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz"
 				
-				ssh root@$targetIP "sleep 3 && wget https://github.com/gridpane/prime-mover/archive/master.zip && unzip master.zip && mv prime-mover-master/primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore"
+				ssh root@$targetIP "sleep 3 && wget https://github.com/gridpane/prime-mover/archive/master.zip && unzip master.zip && mv prime-mover-master/primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore" < /dev/null
 				
-				sleep 5 
+				sleep 1 
 				
 				echo "Remote restoration done... right?"
 		

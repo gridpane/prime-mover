@@ -745,14 +745,30 @@ SingleRCDomain() {
 
 			if [ $dots -ge 2 ]
 			then
+				
 				if [[ $finaldomain == "staging."* ]]
 				then
-					printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (STAGING)" $username $rootfolder
+					if [[ $restore == "yes" ]]
+					then
+						echo "Final domain for this site: $finaldomain"
+					else
+						printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (STAGING)" $username $rootfolder
+					fi
 				else
-					printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (SUBDOMAIN)" $username $rootfolder
+					if [[ $restore == "yes" ]]
+					then
+						echo "Final domain for this site: $finaldomain"
+					else
+						printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (SUBDOMAIN)" $username $rootfolder
+					fi
 				fi
 			else
-				printf '%-20s %-40s %-20s %-30s %-30s\n' "$appname" $finaldomain $username $rootfolder
+				if [[ $restore == "yes" ]]
+				then
+					echo "Final domain for this site: $finaldomain"
+				else
+					printf '%-20s %-40s %-20s %-30s %-30s\n' "$appname" $finaldomain $username $rootfolder
+				fi
 			fi
 		
 			echo "$appname $finaldomain $username $rootfolder ${#finaldomain}" >> /var/tmp/primemover.domains.tmp
@@ -848,12 +864,27 @@ SingleSPDomain() {
 			then
 				if [[ $finaldomain == "staging."* ]]
 				then
-					printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (STAGING)" $username $rootfolder
+					if [[ $restore == "yes" ]]
+					then
+						echo "Final domain for this site: $finaldomain"
+					else
+						printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (STAGING)" $username $rootfolder
+					fi
 				else
-					printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (SUBDOMAIN)" $username $rootfolder
+					if [[ $restore == "yes" ]]
+					then
+						echo "Final domain for this site: $finaldomain"
+					else
+						printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (SUBDOMAIN)" $username $rootfolder
+					fi
 				fi
 			else
-				printf '%-20s %-40s %-20s %-30s %-30s\n' "$appname" $finaldomain $username $rootfolder
+				if [[ $restore == "yes" ]]
+				then
+					echo "Final domain for this site: $finaldomain"
+				else
+					printf '%-20s %-40s %-20s %-30s %-30s\n' "$appname" $finaldomain $username $rootfolder
+				fi
 			fi
 		
 			echo "$appname $finaldomain $username $rootfolder ${#finaldomain}" >> /var/tmp/primemover.domains.tmp
@@ -1018,12 +1049,27 @@ SingleGPDomain() {
 			then
 				if [[ $finaldomain == "staging."* ]]
 				then
-					printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (STAGING)" $username $rootfolder
+					if [[ $restore == "yes" ]]
+					then
+						echo "Final domain for this site: $finaldomain"
+					else
+						printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (STAGING)" $username $rootfolder
+					fi
 				else
-					printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (SUBDOMAIN)" $username $rootfolder
+					if [[ $restore == "yes" ]]
+					then
+						echo "Final domain for this site: $finaldomain"
+					else
+						printf '%-20s %-40s %-20s %-30s %-30s\n' $appname "$finaldomain (SUBDOMAIN)" $username $rootfolder
+					fi
 				fi
 			else
-				printf '%-20s %-40s %-20s %-30s %-30s\n' "$appname" $finaldomain $username $rootfolder
+				if [[ $restore == "yes" ]]
+				then
+					echo "Final domain for this site: $finaldomain"
+				else
+					printf '%-20s %-40s %-20s %-30s %-30s\n' "$appname" $finaldomain $username $rootfolder
+				fi
 			fi
 	
 			echo "$appname $finaldomain $username $rootfolder ${#finaldomain}" >> /var/tmp/primemover.domains.tmp
@@ -1757,6 +1803,16 @@ ImportDB() {
 
 }
 
+UpdateURL() {
+	
+	sourceURL=$(awk '{print $1; exit}' source.domain)
+	
+	wp db search-replace ''$sourceURL'' ''$finaldomain'' --allow-root
+	
+	rm source.domain
+
+}
+
 DoWork() {
 	
 	# Do Work Son...
@@ -1895,6 +1951,8 @@ DoRestore() {
 		username=$(basename $username)
 	
 		chown -R $username:$username /srv/users/$username/apps/$appname/public/*
+		
+		# NEED TO DO A FIND/REPLACE IN THE DB FOR THIS SITE HERE...
 	
 	elif [[ $appname == "htdocs" ]]
 	then
@@ -1914,6 +1972,8 @@ DoRestore() {
 		username=www-data
 	
 		chown -R $username:$username /var/www/$appname/htdocs/*
+		
+		# NEED TO DO A FIND/REPLACE IN THE DB FOR THIS SITE HERE...
 	
 	else
 	
@@ -1930,6 +1990,12 @@ DoRestore() {
 		username=$(basename $username)
 	
 		chown -R $username:$username /home/$username/webapps/$appname/*
+		
+		SingleRCDomain
+		
+		UpdateURL
+		
+		# NEED TO DO A FIND/REPLACE IN THE DB FOR THIS SITE HERE...
 	
 	
 	fi

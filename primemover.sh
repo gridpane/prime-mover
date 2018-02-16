@@ -8,6 +8,9 @@
 
 # Easily move WordPress sites between two different servers managed by GridPane, ServerPilot, RunCloud and Others...
 
+# You'll need to already have manually built your sites at RunCloud and have WordPress successfully running there BEFORE trying to move sites in from other sources.
+# ServerPilot site build code (via API) is already built but needs to be reintegrated to this work. 
+
 if [[ $EUID -ne 0 ]]; then
    echo "This script must be run as root, exiting!!!" 
    exit 1
@@ -19,9 +22,11 @@ if ! type "pv" > /dev/null; then
   	apt -y install pv
 fi
 
-mkdir -p /var/tmp/primemover
+mkdir -p /var/tmp/primemover	
 
 ipaddress=$(curl http://ip4.ident.me 2>/dev/null)
+
+MigrateType=$1
 
 MeImCounting() {
 	
@@ -171,7 +176,7 @@ SSHKeyShare() {
 	
 	# This allows the user to do a SSH key exchange from the current server to their target...
 	
-	ssh-copy-id -i ~/.ssh/id_rsa.pub root@$remoteIP
+	ssh-copy-id -i ~/.ssh/id_rsa.pub root@$targetIP
 
 }
 
@@ -189,42 +194,23 @@ MoveTHISHere() {
 	
 		#Get all of the remote server details...
 		echo "Enter remote Server IP Address..."
-		read remoteIP
+		read targetIP
 		echo "Enter Remote Username"
 		read remoteUser
 		echo "Enter Remote WP Site Folder..."
 		read remoteFolder
-		#echo "Enter Remote Password..." (We're not doing password shit...)
-		#read remotePass
+		echo "Enter Remote Password..." 	# We need to eliminate this password shit...
+		read remotePass 					# We need to eliminate this password shit...
 	
-		# Export the Database
-		wp db export database.sql --allow-root
-		chmod 600 database.sql
-		echo "DB Exported..."
-	
-		#Need to get the DB prefix from wp-config... 
-		tableprefix=$(sed -n -e '/$table_prefix/p' wp-config.php)
-		echo $tableprefix > table.prefix
-		echo "Database Prefix Exported..."
-	
-		# Tar everything up
-		echo "Creating Compressed Tarball of entire site... PLEASE WAIT!!!"
-		#tar -czf ../wp-migrate-file.gz . --exclude '*.zip' --exclude '*.gz' --exclude 'wp-config.php'
-		tar -cf - . -P --exclude '*.zip' --exclude '*.gz' --exclude 'wp-config.php' | pv -s $(du -sb . | awk '{print $1}') | gzip > ../wp-migrate-file.gz
-	
-		chmod 600 ../wp-migrate-file.gz
+		PackageSite
 		
-		rm database.sql
-	
-		rm table.prefix
-
 		echo "Complete Wordpress Site Backed Up"
 	
 		# Copy things to the remote server...
 	
-		ssh-keyscan $remoteIP >> ~/.ssh/known_hosts
+		ssh-keyscan $targetIP >> ~/.ssh/known_hosts
 	
-		sshpass -p "$remotePass" ssh-copy-id $remoteUser@$remoteIP
+		sshpass -p "$remotePass" ssh-copy-id $remoteUser@$targetIP
 	
 		sleep 2
 	
@@ -232,9 +218,9 @@ MoveTHISHere() {
 	
 		echo "Please wait..."
 	
-		#sshpass -p "$remotePass" scp -o StrictHostKeyChecking=no ../wp-migrate-file.gz $remoteUser@$remoteIP:$remoteFolder/wp-migrate-file.gz
+		#sshpass -p "$remotePass" scp -o StrictHostKeyChecking=no ../wp-migrate-file.gz $remoteUser@$targetIP:$remoteFolder/wp-migrate-file.gz
 	
-		scp ../wp-migrate-file.gz $remoteUser@$remoteIP:$remoteFolder/wp-migrate-file.gz
+		scp ../wp-migrate-file.gz $remoteUser@$targetIP:$remoteFolder/wp-migrate-file.gz
 	
 		rm ../wp-migrate-file.gz
 	
@@ -249,7 +235,7 @@ MoveTHISHere() {
 		if [ -z $DoRestore ]
 		then
 			echo "Running remote restoration process..."
-			sshpass -p "$remotePass" ssh $remoteUser@$remoteIP "sleep 2 && cd $remoteFolder && restoreWP" # THIS WILL FAIL BECAUSE THEY DON'T HAVE restoreWP !!!!
+			sshpass -p "$remotePass" ssh $remoteUser@$targetIP "sleep 2 && cd $remoteFolder && restoreWP" # THIS WILL FAIL BECAUSE THEY DON'T HAVE restoreWP !!!!
 			echo "Remote restoration... done???"
 		fi
 	
@@ -258,23 +244,6 @@ MoveTHISHere() {
 	else
 		echo "This is not a Wordpress Directory... try again."
 	fi
-
-}
-
-
-OLDDISPOSABLESPCODE() {
-	
-  awk '/server_name/,/;/' /etc/nginx-sp/vhosts.d/$appname.conf > /var/tmp/primemover/current-domains.txt
-  sed -i '/server_name/d' /var/tmp/primemover/current-domains.txt
-  sed -i '/server-/d' /var/tmp/primemover/current-domains.txt
-  sed -i '/www./d' /var/tmp/primemover/current-domains.txt
-  sed -i '/;/d' /var/tmp/primemover/current-domains.txt
-  awk '!a[$0]++' /var/tmp/primemover/current-domains.txt > /var/tmp/primemover/final-domains.txt
-  sed -i "s/ //g" /var/tmp/primemover/final-domains.txt
-  #echo "The Final List of domains for this application in text form is..."
-  #cat /var/tmp/primemover/final-domains.txt
-  appdomain=$(awk '{print $1}' /var/tmp/primemover/final-domains.txt)
-  appdomain=$(echo $appdomain|tr -d '\n')
 
 }
 
@@ -329,21 +298,104 @@ GetSPUserAppDetails() {
 
 }
 
+PushToSP() {
+	
+	echo "Creating New System User $currentuser on Target Server $targetserver..."
+  
+	if [[ $currentuser == "serverpilot" ]]
+	then
+		echo "Default serverpilot user already exists on remote system..."
+		serverpilot find sysusers serverid=$targetID > /var/tmp/primemover/new-server-users.txt
+		sed -r -n -e /$currentuser/p /var/tmp/primemover/new-server-users.txt > /var/tmp/primemover/new-user-details.txt
 
-SPtoSP() {
-	
-	envir=SP
-	
-	admin_user=WZRD
-	
-	admin_password=P@55W0RD12345
-	
-	admin_email=info@wzrd.co
-	
-	# The intention here is to move sites from a ServerPilot node to another ServerPilot node
+		newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
+		#echo "New User ID Column is $newuserIDCOL"
 
-	# THIS IS ALL CURRENTLY UNDER CONSTRUCTION - THIS IS ALL CODE THAT NEEDS TO BE UPDATED TO WORK FOR PRIMEMOVER
-	# This should all be retooled to just use variables but for now it works with temporary text files 
+		if [ $newuserIDCOL -eq 1 ] 
+		then
+			newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
+		elif [ $newuserIDCOL -eq 2 ]
+		then
+			newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
+		else
+			newuserID=$(awk '{print $3}' /var/tmp/primemover/new-user-details.txt)
+		fi
+	else
+		echo "Creating new user $currentuser on remote system..."
+	  
+		serverpilot sysusers create $targetID $currentuser
+		serverpilot find sysusers serverid=$targetID > /var/tmp/primemover/new-server-users.txt
+		sed -r -n -e /$currentuser/p /var/tmp/primemover/new-server-users.txt > /var/tmp/primemover/new-user-details.txt
+
+		newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
+		#echo "New User ID Column is $newuserIDCOL"
+
+		if [ $newuserIDCOL -eq 1 ] 
+		then
+			newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
+		elif [ $newuserIDCOL -eq 2 ]
+		then
+			newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
+		else
+			newuserID=$(awk '{print $3}' /var/tmp/primemover/new-user-details.txt)
+		fi
+
+		randpass=$(openssl rand -base64 12)
+		echo "New User $currentuser on Server $targetserver has ID $newuserID"
+		serverpilot sysusers update $newuserID password $randpass
+		echo "... and now has new random password $randpass"
+	fi
+
+	echo "Packaging up site..."
+	
+	#TARBALL THE SITE
+	
+	PackageSite
+
+	serverpilot apps create $appname $newuserID $php '["'$appdomain'","www.'$appdomain'"]' '{"site_title":"'$appname'","admin_user":"'$admin_user'","admin_password":"'$admin_password'","admin_email":"'$admin_email'"}'
+
+	echo "Waiting for remote site build to complete..." #Add error checking here by routing that ^^^ output to a variable and checking it
+	
+	sleep 5
+  
+	scp /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz root@$targetIP:/srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz
+	
+	sleep 1
+  
+	echo "Running remote restoration process..."
+	
+	if [[ $run == "1" ]]
+	then
+		ssh root@$targetIP "sleep 3 && wget https://github.com/gridpane/prime-mover/archive/master.zip && unzip master.zip && mv prime-mover-master/primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore" < /dev/null
+	else
+		ssh root@$targetIP "sleep 3 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore" < /dev/null
+	fi
+	
+	sleep 1 
+	
+	echo "Remote restoration done... right?"
+
+}
+
+GetSPApps() {
+
+	cat /var/tmp/primemover/source-applications.txt
+
+	sysuserCOL=$(awk -v name='sysuserid' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
+
+	runtimeCOL=$(awk -v name='runtime' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
+
+	appnameCOL=$(awk -v name='name' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
+
+	serveridCOL=$(awk -v name='serverid' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
+
+	datecreatedCOL=$(awk -v name='name' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
+
+	appidCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
+
+}
+
+PickTargetSP() {
 	
 	serverpilot servers > /var/tmp/primemover/server-list.txt
 
@@ -366,22 +418,20 @@ SPtoSP() {
 
 	awk -v col=id 'NR==1{for(i=1;i<=NF;i++){if($i==col){c=i;break}} print $c} NR>1{print $c}' /var/tmp/primemover/server-list.txt > /var/tmp/primemover/server-ids.txt
 	
-	
+	echo ""	
 	echo "Please keep in mind: THIS CAN POTENTIALLY BE DESTRUCTIVE!!!"
-	echo ""
 	echo ""
 	echo "###########################################################"
 	echo "########  Beginning Migration and Provisioning... #########"
 	echo "########      Here are your available Servers     #########"
 	echo "###########################################################"
 	echo ""
-	echo ""
 	rownumber=0
 	cp /var/tmp/primemover/server-names.txt /var/tmp/primemover/server-names.tmp
 	sed -i -e "1d" /var/tmp/primemover/server-names.tmp
 	sed -i -e "1d" /var/tmp/primemover/server-ips.txt 
 	sed -i -e "1d" /var/tmp/primemover/server-ids.txt
-	while IFS= read -r entrydetail
+	while IFS=" " read -r entrydetail
 	do
 		rownumber=$((rownumber+1))
 		currentIP=$(cat /var/tmp/primemover/server-ips.txt | awk '{print $"$ipaddressCOL"; exit}')
@@ -424,21 +474,10 @@ SPtoSP() {
 	echo ""
 	echo "These are all of the Source Applications on $sourceserver..."
 	echo ""
+	
 	serverpilot find apps serverid=$(serverpilot find servers name=$sourceserver id) > /var/tmp/primemover/source-applications.txt
-
-	cat /var/tmp/primemover/source-applications.txt
-
-	sysuserCOL=$(awk -v name='sysuserid' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
-
-	runtimeCOL=$(awk -v name='runtime' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
-
-	appnameCOL=$(awk -v name='name' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
-
-	serveridCOL=$(awk -v name='serverid' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
-
-	datecreatedCOL=$(awk -v name='name' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
-
-	appidCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
+	
+	GetSPApps
 
 	# echo "systemuserid Column: $sysuserCOL - runtime Column: $runtimeCOL - AppName Column: $appnameCOL - ServerID Column: $serveridCOL - Date Column: $datecreatedCOL - AppID Column is $appidCOL"
 
@@ -447,13 +486,25 @@ SPtoSP() {
 
 	read desiredapps
 
+}
+
+SPtoSP() {
+	
+	# The intention here is to move sites from a ServerPilot node to another ServerPilot node
+	
+	PickTargetSP
+
 	if [ -z "$desiredapps" ]
 	then
+		
 		sed '1d' /var/tmp/primemover/source-applications.txt > /var/tmp/primemover/tmpfile; mv /var/tmp/primemover/tmpfile /var/tmp/primemover/source-applications.txt
-		echo "Copying SP Sites..."
-		while IFS= read -r word1 word2 word3 word4 word5 word6
+		echo "Copying ServerPilot Sites..."
+		run=0
+		while IFS=" " read -r word1 word2 word3 word4 word5 word6
 		do
 		  
+		  	((run++))
+			
 			GetSPUserAppDetails
 		  
 			cd /srv/users/$currentuser/apps/$appname/public
@@ -473,77 +524,7 @@ SPtoSP() {
 				
 				appdomain=$finaldomain
 			  
-				echo "Creating New System User $currentuser on Target Server $targetserver..."
-			  
-				if [[ $currentuser == "serverpilot" ]]
-				then
-					echo "Default serverpilot user already exists on remote system..."
-					serverpilot find sysusers serverid=$targetID > /var/tmp/primemover/new-server-users.txt
-					sed -r -n -e /$currentuser/p /var/tmp/primemover/new-server-users.txt > /var/tmp/primemover/new-user-details.txt
-
-					newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
-					#echo "New User ID Column is $newuserIDCOL"
-
-					if [ $newuserIDCOL -eq 1 ] 
-					then
-						newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
-					elif [ $newuserIDCOL -eq 2 ]
-					then
-						newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
-					else
-						newuserID=$(awk '{print $3}' /var/tmp/primemover/new-user-details.txt)
-					fi
-				else
-					echo "Creating new user $currentuser on remote system..."
-				  
-					serverpilot sysusers create $targetID $currentuser
-					serverpilot find sysusers serverid=$targetID > /var/tmp/primemover/new-server-users.txt
-					sed -r -n -e /$currentuser/p /var/tmp/primemover/new-server-users.txt > /var/tmp/primemover/new-user-details.txt
-
-					newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
-					#echo "New User ID Column is $newuserIDCOL"
-
-					if [ $newuserIDCOL -eq 1 ] 
-					then
-						newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
-					elif [ $newuserIDCOL -eq 2 ]
-					then
-						newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
-					else
-						newuserID=$(awk '{print $3}' /var/tmp/primemover/new-user-details.txt)
-					fi
-
-					randpass=$(openssl rand -base64 12)
-					echo "New User $currentuser on Server $targetserver has ID $newuserID"
-					serverpilot sysusers update $newuserID password $randpass
-					echo "... and now has new random password $randpass"
-				fi
-	
-				echo "Packaging up site..."
-				
-				#TARBALL THE SITE
-				
-				PackageSite
-		
-				serverpilot apps create $appname $newuserID $php '["'$appdomain'","www.'$appdomain'"]' '{"site_title":"'$appname'","admin_user":"'$admin_user'","admin_password":"'$admin_password'","admin_email":"'$admin_email'"}'
-
-				echo "Waiting for remote site build to complete..." #Add error checking here by routing that ^^^ output to a variable and checking it
-				
-				sleep 5
-			  
-				scp /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz root@$targetIP:/srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz
-				
-				sleep 1
-			  
-				echo "Running remote restoration process..."
-
-				#ssh root@$targetIP "sleep 3 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public/ && tableprefix=$(cat /srv/users/$username/apps/$appname/public/table.prefix) && sed -i "/$table_prefix =/c\\$tableprefix" /srv/users/$username/apps/$appname/public/wp-config.php && wp db import database.sql --allow-root && rm database.gz && rm table.prefix && chown -R $username:$username /srv/users/$username/apps/$appname/public/* && /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz"
-				
-				ssh root@$targetIP "sleep 3 && wget https://github.com/gridpane/prime-mover/archive/master.zip && unzip master.zip && mv prime-mover-master/primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore" < /dev/null
-				
-				sleep 1 
-				
-				echo "Remote restoration done... right?"
+				PushToSP
 		
 			fi
 		
@@ -551,7 +532,6 @@ SPtoSP() {
 		
 	fi
 }
-
 
 MoveFromRC() {
 	
@@ -562,9 +542,6 @@ MoveFromRC() {
 		while read -r fullpath
 		do
 			
-			# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
-			# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
-			# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
 			# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
 
 			file=$(basename $fullpath) # We already know this is wp-config.php because... code. 
@@ -607,9 +584,6 @@ MoveFromRC() {
 				echo "New Username is... $currentuser"
 			fi
 	
-			# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
-			# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
-			# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
 			# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
 			
 			# We're going to need to know the PHP version... somehow...
@@ -1097,9 +1071,6 @@ sort -k5 -n /var/tmp/primemover.domains.tmp > /var/tmp/primemover.domains.tmp2
 # Build required site(s) on remote GridPane server 
 # Currently works only with GridPane... cool your jets, I'm working on it.
 
-# You'll need to already have manually built your sites at RunCloud and have WordPress successfully running there BEFORE trying to move sites in from other sources.
-# ServerPilot site build code (via API) is already built but needs to be reintegrated to this work. 
-
 MakeSiteonRemote() {
 	
 	if [ "$y" = "1" ]
@@ -1110,10 +1081,10 @@ MakeSiteonRemote() {
 	
 	if ssh -n root@$remote_IP [ -d /var/www/$site_to_clone/htdocs/wp-content/plugins/nginx-helper ] 
 	then
+		echo ""
 		echo "****************************************************************************"
 		echo "***** SITE ALREADY EXISTINGS ON REMOTE - PROCEDING WILL BE DESTRUCTIVE *****"
 		echo "****************************************************************************"
-		echo ""
 		echo ""
 		echo "You must press Y (Case Sensitive) to Proceed"		
 		echo "Otherwise in ten seconds this site migration will be automatically halted..."
@@ -1451,9 +1422,65 @@ CoreSiteLoop() {
 	
 }
 
+PushtoRC() {
+	
+	echo "What is the IP address of your target RunCloud Server?"
+	read RCRemoteIP < /dev/tty
+	
+	echo "You'll need to have a root password for the remote RunCloud."
+	
+	echo "Getting ready to connect to target server..."
+	
+	sleep 3
+	
+	targetIP=$RCRemoteIP
+	
+	SSHKeyShare
+	
+	#example... 45.63.75.240
+	
+	echo "What is the remote path for this site on your target RunCloud Server?"
+	read RCRemotePath < /dev/tty
+	
+	RCappname=$(basename $RCRemotePath)
+	
+	RCusername=$(dirname $RCRemotePath)
+	
+	RCusername=$(dirname $username)
+	
+	RCusername=$(basename $username)
+	
+	#example... /home/runcloud/webapps/primemover-test
+	
+	echo "Packaging up site..."
+	
+	#TARBALL THE SITE
+	
+	PackageSite
+	
+	sleep 2
+	
+	echo "Copying to remote RunCloud Server..."
+  
+	scp /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz root@$targetIP:/home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz
+	
+	sleep 1
+  
+	echo "Running remote restoration process..."
+	
+	if [[ $run == "1" ]]
+	then
+		ssh root@$targetIP "sleep 3 && wget https://github.com/gridpane/prime-mover/archive/master.zip && unzip master.zip && mv prime-mover-master/primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && primemover restore" < /dev/null
+	else
+		ssh root@$targetIP "sleep 3 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && primemover restore" < /dev/null
+	fi
+	
+	sleep 1
+
+}
+
 # Secure Copy current packaged site to new server and restore
 # All of this is only going to work moving things into a GridPane server...
-# Again, I'm working on it. 
 
 DoMigrate() {
 	
@@ -1490,6 +1517,112 @@ DoMigrate() {
 	sleep 1
 
 }
+
+SPtoRC() {
+	
+	# The intention here is to move sites from a ServerPilot node to a RunCloud node...
+	
+	SourceID=$(serverpilot find servers lastaddress=$ipaddress id)
+	
+	serverpilot find apps serverid=$SourceID > /var/tmp/primemover/source-applications.txt
+	
+	GetSPApps
+	
+	echo ""
+	echo "To begin initializing ALL apps press ENTER... NOTE: User passwords will be reset on target node!"
+
+	read desiredapps
+
+	if [ -z "$desiredapps" ]
+	then
+		
+		sed '1d' /var/tmp/primemover/source-applications.txt > /var/tmp/primemover/tmpfile; mv /var/tmp/primemover/tmpfile /var/tmp/primemover/source-applications.txt
+		echo "Copying ServerPilot Sites..."
+		run=0
+		while IFS=" " read -r word1 word2 word3 word4 word5 word6
+		do
+		  
+		  	((run++))
+			
+			GetSPUserAppDetails
+		  
+			cd /srv/users/$currentuser/apps/$appname/public
+		  
+			if ! $(wp core is-installed --allow-root); 
+			then
+		  	  
+				echo "This is not a valid WordPress install, skipping this app!"
+
+			else
+			  
+				echo "Proceeding..."
+			  
+				SingleSPDomain
+			  
+				echo "The Final Domain for this application is $finaldomain"
+				
+				appdomain=$finaldomain
+			  
+				PushToRC
+		
+			fi
+		
+		done < "/var/tmp/primemover/source-applications.txt"
+		
+	fi
+
+}
+
+SimpleSimon() {
+	
+	echo "###########################################################"
+	echo "######   Let's migrate all your sites, shall we?   ########"
+	echo "######   We need to get some basic information...  ########"
+	echo "###########################################################"
+	echo ""
+	echo "Please choose from one of the following options..."
+	echo ""
+	echo "1.) Migrate sites from ServerPilot Server to a GridPane Server"
+	echo ""
+	echo "2.) Migrate sites from RunCloud Server to a GridPane Server"
+	echo ""
+	echo "3.) Migrate sites from ServerPilot Server to a ServerPilot Server"
+	echo ""
+	echo "4.) Migrate sites from RunCloud Server to RunCloud Server"
+	echo ""
+	echo "5.) Migrate sites from ServerPilot Server to RunCloud Server"
+	echo ""
+	echo "6.) Migrate sites from RunCloud Server to ServerPilot Server"
+	echo ""
+	read MigrateInput < /dev/tty
+	
+	if [[ $MigrateInput == "1" ]]
+	then
+		MigrateType=SP2GP
+	elif [[ $MigrateInput == "2" ]]
+	then
+		MigrateType=RC2GP
+	elif [[ $MigrateInput == "3" ]]
+	then
+		MigrateType=SP2SP
+	elif [[ $MigrateInput == "4" ]]
+	then
+		MigrateType=RC2RC
+	elif [[ $MigrateInput == "5" ]]
+	then
+		MigrateType=SP2RC
+	elif [[ $MigrateInput == "6" ]]
+	then
+		MigrateType=RC2SP
+	else
+		echo "You entered something weird - exiting!"
+		exit 187;
+	fi
+	
+	CheckMode	
+
+}
+
 
 WhatPlatform() {
 	
@@ -1564,6 +1697,66 @@ LoopLocalSites() {
 
 }
 
+GetRCDestDetails() {
+	
+	echo "What is the destination directory path on your RunCloud server for this site?"
+	echo ""
+	read RCPath < /dev/tty
+
+}
+
+GetWPAdmin() {
+	
+	echo "Before we proceed we need to collect default WP admin details for the new sites we'll be creating."
+	echo ""
+	echo "If your migrations succeed these account details will obviously be wiped out."
+	echo ""
+	echo "Your current existing account credentials will overwrite these temporary details."
+	echo ""
+	echo "These are primarily for testing purposes in the event that a site build fails."
+	echo ""
+	echo "Please enter default admin username..."
+	echo ""
+	ready admin_user < /dev/tty
+	echo "Please enter default admin email..."
+	echo ""
+	ready admin_email < /dev/tty
+	echo "Please enter default admin password..."
+	echo ""
+	ready admin_password < /dev/tty
+
+}
+
+ImportDB() {
+	
+	if [ -f database.sql ]
+	then
+		wp db import database.sql --allow-root
+	elif [ -f database.gz ]
+	then
+		tar -xzf database.gz
+		wp db import database.sql --allow-root
+	else
+		echo "Error! Database backup file missing!"
+		exit 187;
+	fi
+
+	echo "Database Imported... We Think"
+	
+	if [ -f database.sql ]
+	then
+		rm database.sql
+	elif [ -f database.gz ]
+	then
+		rm database.gz
+	else
+		echo "No DB file to remove!"
+	fi
+
+	rm table.prefix
+
+}
+
 DoWork() {
 	
 	# Do Work Son...
@@ -1619,59 +1812,129 @@ DoWork() {
 
 }
 
-if [[ $1 == "restore" ]]
-then
-	tableprefix=$(cat table.prefix)
-	sed -i "/$table_prefix =/c\\$tableprefix" wp-config.php
-	echo "Prefixes Fixed"
-
-	if [ -f database.sql ]
-	then
-		wp db import database.sql --allow-root
-	elif [ -f database.gz ]
-	then
-		tar -xzf database.gz
-		wp db import database.sql --allow-root
-	else
-		echo "Error! Database backup file missing!"
-		exit 187;
-	fi
-
-	echo "Database Imported... We Think"
+CheckMode() {
 	
-	if [ -f database.sql ]
+	if [[ $MigrateType == "restore" ]]
 	then
-		rm database.sql
-	elif [ -f database.gz ]
+	
+		DoRestore
+		
+	elif [[ $MigrateType == "SP2RC" ]] || [[ $MigrateType == "sp2rc" ]]
 	then
-		rm database.gz
+	
+		echo "Migrating from a ServerPilot Server to a RunCloud Server..."
+		envir=SP
+		SPtoRC
+
+	elif [[ $MigrateType == "SP2SP" ]] || [[ $MigrateType == "sp2sp" ]]
+	then
+	
+		echo "Migrating from a ServerPilot Server to another ServerPilot Server..."
+	
+		envir=SP
+		GetWPAdmin
+		ServerPilotShell
+		SPtoSP
+	
+	elif [[ $MigrateType == "RC2RC" ]] || [[ $MigrateType == "rc2rc" ]]
+	then
+	
+		echo "Migrating from a RunCloud server to another RunCloud Server..."
+		envir=RC
+
+	elif [[ $MigrateType == "RC2SP" ]] || [[ $MigrateType == "rc2sp" ]]
+	then
+	
+		echo "Migrating from a RunCloud Server to a ServerPilot Server..."
+		envir=RC
+		GetWPAdmin
+
+	elif [[ $MigrateType == "RC2GP" ]] || [[ $MigrateType == "rc2gp" ]]
+	then
+	
+		echo "Migrating from a RunCloud Server to a GridPane Server..."
+		envir=RC
+
+	elif [[ $MigrateType == "SP2GP" ]] || [[ $MigrateType == "sp2gp" ]]
+	then
+	
+		echo "Migrating from a ServerPilot Server to a GridPane Server..."
+		envir=SP
+
 	else
-		echo "No DB file to remove!"
+	
+		echo "No command line input..."
+		#echo "I guess I could ask a bunch of Simple Simon Questions..."
+		SimpleSimon
+	
 	fi
 
-	rm table.prefix
+}
+
+DoRestore() {
 	
 	currdir=$PWD
 	appname=$(basename $currdir)
-	
+
 	if [[ $appname == "public" ]]
 	then
+	
+		echo "This looks like a ServerPilot server..."
+	
+		tableprefix=$(cat table.prefix)
+		sed -i "/$table_prefix =/c\\$tableprefix" wp-config.php
+		echo "Prefixes Fixed"
+	
+		ImportDB
+	
 		cd ..
 		currdir=$PWD
 		appname=$(basename $currdir)
 		cd ../..
 		username=$PWD
 		username=$(basename $username)
-		
+	
 		chown -R $username:$username /srv/users/$username/apps/$appname/public/*
+	
+	elif [[ $appname == "htdocs" ]]
+	then
+	
+		echo "This looks like a GridPane server..."
+	
+		tableprefix=$(cat table.prefix)
+		sed -i "/$table_prefix =/c\\$tableprefix" ../wp-config.php
+		echo "Prefixes Fixed"
+	
+		ImportDB
+	
+		cd ..
+		currdir=$PWD
+		appname=$(basename $currdir)
+		#GridPane is currently single user...
+		username=www-data
+	
+		chown -R $username:$username /var/www/$appname/htdocs/*
+	
 	else
-		echo "This is not a restore..."
+	
+		echo "This looks like a RunCloud server..."
+	
+		tableprefix=$(cat table.prefix)
+		sed -i "/$table_prefix =/c\\$tableprefix" wp-config.php
+		echo "Prefixes Fixed"
+	
+		ImportDB
+	
+		cd ../..
+		username=$PWD
+		username=$(basename $username)
+	
+		chown -R $username:$username /var/www/$appname/htdocs/*
+	
+	
 	fi
-else
-	ServerPilotShell
-	SPtoSP
-fi
+	
+}
 
-
-
+CheckMode
 # Copyright 2018 PrimeMover.io - K. Patrick Gallagher

@@ -6,9 +6,9 @@ Bash script(s) to facilitate migration of WordPress sites into and out of server
 
 This is all very VERY aplha right now. Use at your own risk.
 
-This is a highly neutered/smashed together version of the MigrateSafely migration tool we use internally at GridPane.com
+This is a highly neutered version of the MigrateSafely migration tool we use internally at GridPane.com
 
-We're adding in all kinds of old work presently which needs to be tested, refactored, streamlined, and integrated into this work.
+We're adding in all kinds of older ServerPilot and RunCloud work which needs to be tested, refactored, streamlined, and integrated into this work.
 
 So all kinds of things might be (i.e. ARE ALMOST CERTAINLY) completely broken. Please feel free to help out.
 

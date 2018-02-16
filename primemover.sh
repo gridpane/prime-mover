@@ -1422,7 +1422,7 @@ CoreSiteLoop() {
 	
 }
 
-PushtoRC() {
+PushToRC() {
 	
 	echo "What is the IP address of your target RunCloud Server?"
 	read RCRemoteIP < /dev/tty
@@ -1446,9 +1446,9 @@ PushtoRC() {
 	
 	RCusername=$(dirname $RCRemotePath)
 	
-	RCusername=$(dirname $username)
+	RCusername=$(dirname $RCusername)
 	
-	RCusername=$(basename $username)
+	RCusername=$(basename $RCusername)
 	
 	#example... /home/runcloud/webapps/primemover-test
 	
@@ -1541,8 +1541,6 @@ SPtoRC() {
 		run=0
 		while IFS=" " read -r word1 word2 word3 word4 word5 word6
 		do
-		  
-		  	((run++))
 			
 			GetSPUserAppDetails
 		  
@@ -1554,6 +1552,8 @@ SPtoRC() {
 				echo "This is not a valid WordPress install, skipping this app!"
 
 			else
+				
+				((run++))
 			  
 				echo "Proceeding..."
 			  
@@ -1929,7 +1929,7 @@ DoRestore() {
 		username=$PWD
 		username=$(basename $username)
 	
-		chown -R $username:$username /var/www/$appname/htdocs/*
+		chown -R $username:$username /home/$username/webapps/$appname/*
 	
 	
 	fi

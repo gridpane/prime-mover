@@ -330,29 +330,9 @@ PushToSP() {
 			newuserID=$(awk '{print $3}' /var/tmp/primemover/new-user-details.txt)
 		fi
 	else
-		echo "Creating new user $currentuser on remote system..."
-	  
-		serverpilot sysusers create $targetID $currentuser
-		serverpilot find sysusers serverid=$targetID > /var/tmp/primemover/new-server-users.txt
-		sed -r -n -e /$currentuser/p /var/tmp/primemover/new-server-users.txt > /var/tmp/primemover/new-user-details.txt
-
-		newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
-		#echo "New User ID Column is $newuserIDCOL"
-
-		if [ $newuserIDCOL -eq 1 ] 
-		then
-			newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
-		elif [ $newuserIDCOL -eq 2 ]
-		then
-			newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
-		else
-			newuserID=$(awk '{print $3}' /var/tmp/primemover/new-user-details.txt)
-		fi
-
-		randpass=$(openssl rand -base64 12)
-		echo "New User $currentuser on Server $targetserver has ID $newuserID"
-		serverpilot sysusers update $newuserID password $randpass
-		echo "... and now has new random password $randpass"
+		
+		MakeSPUser
+	
 	fi
 
 	echo "Packaging up site..."
@@ -547,14 +527,76 @@ SPtoSP() {
 	fi
 }
 
+MakeSPUser() {
+	
+
+	echo "Creating New System User $currentuser on Target Server $targetserver..."
+	
+	serverpilot sysusers create $targetserver $currentuser
+	serverpilot find sysusers serverid=$SPRemoteIP > /var/tmp/primemover/new-server-users.txt
+	sed -r -n -e /$currentuser/p /var/tmp/primemover/new-server-users.txt > /var/tmp/primemover/new-user-details.txt
+
+  	newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
+  	#echo "New User ID Column is $newuserIDCOL"
+
+	if [ $newuserIDCOL -eq 1 ] 
+	then
+		newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
+	elif [ $newuserIDCOL -eq 2 ]
+	then
+		newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
+	else
+		newuserID=$(awk '{print $3}' /var/tmp/primemover/new-user-details.txt)
+	fi
+
+	randpass=$(openssl rand -base64 12)
+	echo "New User $currentuser on Server $targetserver has ID $newuserID"
+	serverpilot sysusers update $newuserID password $randpass
+	echo "... and now has new random password $randpass"
+
+}
+
+BuildSPSite() {
+	
+	serverpilot apps create $appname $newuserID $php '["'$appdomain'","www.'$appdomain'"]' '{"site_title":"'$appname'","admin_user":"'$admin_user'","admin_password":"'$admin_password'","admin_email":"'$admin_email'"}'
+	
+}
+
 RCtoSP() {
 	
+	echo "Confirming that we have the ServerPilot shell tools..."
+	ServerPilotShell
+	
+	echo "Getting all local RunCloud site domains..."
 	rcDomains
+	
+	#Get Default WP Admin Creds...
+	GetWPAdmin
+	
+	echo "Are we moving all of these sites to the same server? Please enter YES or NO..."
+	
+	ready SameSPforAll < /dev/tty
+	
+	if [[ $SameSPforAll == "YES" ]] || [[ $SameSPforAll == "yes" ]] || [[ $SameSPforAll == "Yes" ]] || [[ $SameSPforAll == "Y" ]] || [[ $SameSPforAll == "y" ]]
+	then
+		SameServer="yes"
+		
+		echo "What is the remote IP of the target ServerPilot server?"
+		
+		read $targetserver < /dev/tty
+		
+		targetIP=$targetserver
+		
+		SSHKeyShare
+	else
+		echo "We'll gather a different IP address for each site during the migration..."
+	fi
+		
 	
 	while read -r appname site_to_clone username rootfolder count 
 	do
 	    
-		echo "Building site $site_to_clone from $rootfolder on remote server $remote_IP..."
+		echo "Starting with site $site_to_clone from $rootfolder..."
 		
 		dots=$(echo "$site_to_clone" | awk -F. '{ print NF - 1 }')
 			
@@ -562,12 +604,73 @@ RCtoSP() {
 		then
 			echo "This is a staging site..."
 			ShipOnly
+			
+			# NEED WORK HERE!!!
+			
 		elif [[ $site_to_clone == "canary."* ]] && [[ $dots -ge 2 ]]
 		then
 			echo "This is a UpdateSafely site, skipping..."
 		else
-			#echo "Doing $appname $site_to_clone $username $rootfolder..."
-			SingleSite
+			
+			# FIND PHP HERE!!!
+			
+			if [ -f "/etc/php56rc/fpm.d/$appname.conf" ]
+			then
+				echo "PHP56RC file found... setting PHP to verison 5.6"
+				php="php5.6"
+			elif [ -f "/etc/php70rc/fpm.d/$appname.conf" ]
+			then
+				echo "PHP70RC file found... setting PHP to verison 7.0"
+				php="php7.0"
+			elif [ -f "/etc/php71rc/fpm.d/$appname.conf" ]
+			then
+				echo "PHP71RC file found... setting PHP to verison 7.1"
+				php="php7.1"
+			else
+				echo "No PHP file found... defaulting to PHP7.0"
+				php="php7.0"
+			fi
+			
+			if [[ $SameServer == "yes" ]]
+			then
+				echo "We're using the same IP address $targetserver for all sites..."
+			else
+				echo "What is the remote IP of the target ServerPilot server for site $site_to_clone?"
+				
+				echo "You'll need the root password for the remote ServerPilot system and root password login access will need to be ON."
+			
+				read $targetserver < /dev/tty
+				
+				targetIP=$targetserver
+		
+				SSHKeyShare
+				
+			fi
+			
+			currentuser=$username
+			
+			if [[ $currentuser = "runcloud" ]]
+			then
+				echo "Current user is runcloud, switching to serverpilot..."
+				currentuser=serverpilot
+			else
+				echo "We'll need to build this user $currentuser on the remote ServerPilot system..."
+			fi
+			
+			#Make sure we don't have any underscores...
+			echo $appname > tempfile
+			appname=$(sed 's/\_/-/g' tempfile)
+			rm tempfile
+			
+			#BuildSPSite
+			
+			PushToSP
+			
+			sleep 1
+			
+			echo "Running remote restoration process..."
+		
+			
 		fi
 		
 		#echo "Getting next site..."
@@ -575,86 +678,6 @@ RCtoSP() {
 	done <"/var/tmp/primemover.domains.tmp2"
 	
 	echo "All sites processed!"
-	
-	
-	
-		if [ $currentuser = "runcloud" ]
-		then
-			echo "Current user is runcloud... not cool..."
-			echo "Using root domain name to generate remote username..."
-			rootdomain=$(echo $appdomain | awk -F\. '{print $(NF-1) FS $NF}')
-			currentuser=${rootdomain%.*}
-			echo "New Username is... $currentuser"
-		fi
-
-		# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
-		
-		# We're going to need to know the PHP version... somehow...
-		# FIND PHP HERE!!!
-		if [ -f "/etc/php56rc/fpm.d/$appname.conf" ]
-		then
-			echo "PHP56RC file found... setting PHP to verison 5.6"
-			php="php5.6"
-		elif [ -f "/etc/php70rc/fpm.d/$appname.conf" ]
-		then
-			echo "PHP70RC file found... setting PHP to verison 7.0"
-			php="php7.0"
-		elif [ -f "/etc/php71rc/fpm.d/$appname.conf" ]
-		then
-			echo "PHP71RC file found... setting PHP to verison 7.1"
-			php="php7.1"
-		else
-			echo "No PHP file found... defaulting to PHP7.0"
-			php="php7.0"
-		fi
-
-		echo "Creating New System User $currentuser on Target Server $targetserver..."
-		serverpilot sysusers create $targetID $currentuser
-		serverpilot find sysusers serverid=$targetID > /var/tmp/primemover/new-server-users.txt
-		sed -r -n -e /$currentuser/p /var/tmp/primemover/new-server-users.txt > /var/tmp/primemover/new-user-details.txt
-
-	  	newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
-	  	#echo "New User ID Column is $newuserIDCOL"
-
-		if [ $newuserIDCOL -eq 1 ] 
-		then
-			newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
-		elif [ $newuserIDCOL -eq 2 ]
-		then
-			newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
-		else
-			newuserID=$(awk '{print $3}' /var/tmp/primemover/new-user-details.txt)
-		fi
-
-		randpass=$(openssl rand -base64 12)
-		echo "New User $currentuser on Server $targetserver has ID $newuserID"
-		serverpilot sysusers update $newuserID password $randpass
-		echo "... and now has new random password $randpass"
-
-		echo "Copy WP Site with WWW Domain..."
-		
-		PackageSite
-		
-		#Make sure we don't have any underscores...
-		echo $appname > tempfile
-		appname=$(sed 's/\_/-/g' tempfile)
-		rm tempfile
-
-		serverpilot apps create $appname $newuserID $php '["'$appdomain'","www.'$appdomain'"]' '{"site_title":"'$appname'","admin_user":"WZRD","admin_password":"P@55W0RD12345","admin_email":"info@wzrd.co"}'
-		sleep 1
-		echo "Remote Application Step Completed... or did it?"
-		ssh-keyscan $targetIP >> ~/.ssh/known_hosts
-		sshpass -p "$randpass" ssh-copy-id $currentuser@$targetIP
-		scp ../wp-migrate-file.gz $currentuser@$targetIP:/srv/users/$currentuser/apps/$appname/public/wp-migrate-file.gz
-		sleep 2
-	
-		echo "Running remote restoration process..."
-		sshpass -p "$randpass" ssh $currentuser@$targetIP "sleep 2 && cd /srv/users/$currentuser/apps/$appname/public && restoreWP" < /dev/null # This dev/null - I *believe* fixed the problem with only one line being processed
-		echo "Remote restoration... done???"
-	
-		echo "This was the fullpath we just completed... $fullpath."
-	
-		echo "Continuing..."
 
 }
 
@@ -1777,13 +1800,13 @@ GetWPAdmin() {
 	echo ""
 	echo "Please enter default admin username..."
 	echo ""
-	ready admin_user < /dev/tty
+	read admin_user < /dev/tty
 	echo "Please enter default admin email..."
 	echo ""
-	ready admin_email < /dev/tty
+	read admin_email < /dev/tty
 	echo "Please enter default admin password..."
 	echo ""
-	ready admin_password < /dev/tty
+	read admin_password < /dev/tty
 
 }
 

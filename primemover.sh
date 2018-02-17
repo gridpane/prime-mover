@@ -11,6 +11,8 @@
 # You'll need to already have manually built your sites at RunCloud and have WordPress successfully running there BEFORE trying to move sites in from other sources.
 # ServerPilot site build code (via API) is already built but needs to be reintegrated to this work. 
 
+source ~/.bash_profile
+
 if [[ $EUID -ne 0 ]]; then
    echo "This script must be run as root, exiting!!!" 
    exit 1
@@ -90,6 +92,21 @@ CheckWPcli() {
 		curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
 		chmod +x wp-cli.phar
 		sudo mv wp-cli.phar /usr/local/bin/wp
+	fi
+	
+
+	if [ -f /usr/local/bin/wp-completion.bash ]
+	then
+		if grep -q "source /usr/local/bin/wp-completion.bash" ~/.bash_profile; then 
+		   echo "WP-CLI Bash Completion already set..."
+		else
+			echo "source /usr/local/bin/wp-completion.bash" >> ~/.bash_profile   
+		fi
+	else
+		wget https://raw.githubusercontent.com/wp-cli/wp-cli/master/utils/wp-completion.bash
+		mv wp-completion.bash /usr/local/bin/wp-completion.bash
+	
+		echo "source /usr/local/bin/wp-completion.bash" >> ~/.bash_profile
 	fi
 
 }
@@ -192,16 +209,6 @@ MoveTHISHere() {
 	if [ -f wp-config.php ]
 	then
 	
-		#Get all of the remote server details...
-		echo "Enter remote Server IP Address..."
-		read targetIP
-		echo "Enter Remote Username"
-		read remoteUser
-		echo "Enter Remote WP Site Folder..."
-		read remoteFolder
-		echo "Enter Remote Password..." 	# We need to eliminate this password shit...
-		read remotePass 					# We need to eliminate this password shit...
-	
 		PackageSite
 		
 		echo "Complete Wordpress Site Backed Up"
@@ -267,6 +274,8 @@ GetSPUserAppDetails() {
 	userhold=word$sysuserCOL
 	sysuserid=$(echo ${!userhold})
 
+	echo ""
+	echo ""
 	echo "Application Name/Folder is $appname"
 	echo "PHP Version is $php"
 	echo "User ID is $sysuserid"
@@ -366,9 +375,10 @@ PushToSP() {
 	
 	if [[ $run == "1" ]]
 	then
-		ssh root@$targetIP "sleep 3 && wget https://github.com/gridpane/prime-mover/archive/master.zip && unzip master.zip && mv prime-mover-master/primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore" < /dev/null
+		ssh root@$targetIP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && echo $finaldomain > source.domain && primemover restore" < /dev/null
 	else
-		ssh root@$targetIP "sleep 3 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore" < /dev/null
+		#ssh root@$targetIP "sleep 3 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore" < /dev/null
+		ssh root@$targetIP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && echo $finaldomain > source.domain && primemover restore" < /dev/null
 	fi
 	
 	sleep 1 
@@ -379,6 +389,10 @@ PushToSP() {
 
 GetSPApps() {
 
+	echo "These are all of the local apps we'll be moving..."
+	
+	echo ""
+	
 	cat /var/tmp/primemover/source-applications.txt
 
 	sysuserCOL=$(awk -v name='sysuserid' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/source-applications.txt)
@@ -533,154 +547,115 @@ SPtoSP() {
 	fi
 }
 
-MoveFromRC() {
+RCtoSP() {
 	
-	if [ -f "/etc/nginx-rc/nginx.conf" ]
-	then
-		echo "Copying from a RunCloud Server..."
+	rcDomains
 	
-		while read -r fullpath
-		do
+	while read -r appname site_to_clone username rootfolder count 
+	do
+	    
+		echo "Building site $site_to_clone from $rootfolder on remote server $remote_IP..."
+		
+		dots=$(echo "$site_to_clone" | awk -F. '{ print NF - 1 }')
 			
-			# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
-
-			file=$(basename $fullpath) # We already know this is wp-config.php because... code. 
-
-			dir=$(dirname $fullpath) # This is where we're headed
-
-			cd $dir # And no we're here...
-	
-			# And now we grab the name of the current directory "application" with this...
-			appname=${PWD##*/}
-	
-			# Carve out the domains from the nginx config files for this WP site... somehow...
-			awk '/server_name/,/;/' /etc/nginx-rc/conf.d/$appname.d/main.conf > /var/tmp/primemover/current-domains.txt
-	
-			#Get rid of the server_name and blank spaces business...
-			sed -i 's/server_name             //g' /var/tmp/primemover/current-domains.txt 
-	
-			#And now get rid of anything between www and the semicolon... Keep in mind this is NOT going to be foolproof for various subdomains etc. 
-			appdomain=$(sed 's/www.*;//' /var/tmp/primemover/current-domains.txt)
+		if [[ $site_to_clone == "staging."* ]] && [[ $dots -ge 2 ]]
+		then
+			echo "This is a staging site..."
+			ShipOnly
+		elif [[ $site_to_clone == "canary."* ]] && [[ $dots -ge 2 ]]
+		then
+			echo "This is a UpdateSafely site, skipping..."
+		else
+			#echo "Doing $appname $site_to_clone $username $rootfolder..."
+			SingleSite
+		fi
 		
-			#Gotta Settle/Fix for a subdomain use case... i.e. when there is a subdomain ONLY and a semicolon at the end!
-			# Here we go... 
-			#VERSION='2.3.3'...echo "${VERSION//.}" - - - With the period . . . . being the thing that gotta go. 
-			appdomain=$(echo "${appdomain//;}")
+		#echo "Getting next site..."
+				
+	done <"/var/tmp/primemover.domains.tmp2"
 	
-			appdomain=$(echo $appdomain|tr -d '\n')
+	echo "All sites processed!"
 	
-			echo "The Final List of domains for this application is $appdomain"
 	
-			# Now we deal with usernames... which we will extract here
-		
-			currentuser=$(ls -ld $fullpath | awk '{print $3}')
-		
-			if [ $currentuser = "runcloud" ]
-			then
-				echo "Current user is runcloud... not cool..."
-				echo "Using root domain name to generate remote username..."
-				rootdomain=$(echo $appdomain | awk -F\. '{print $(NF-1) FS $NF}')
-				currentuser=${rootdomain%.*}
-				echo "New Username is... $currentuser"
-			fi
 	
-			# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
-			
-			# We're going to need to know the PHP version... somehow...
-			# FIND PHP HERE!!!
-			if [ -f "/etc/php56rc/fpm.d/$appname.conf" ]
-			then
-				echo "PHP56RC file found... setting PHP to verison 5.6"
-				php="php5.6"
-			elif [ -f "/etc/php70rc/fpm.d/$appname.conf" ]
-			then
-				echo "PHP70RC file found... setting PHP to verison 7.0"
-				php="php7.0"
-			elif [ -f "/etc/php71rc/fpm.d/$appname.conf" ]
-			then
-				echo "PHP71RC file found... setting PHP to verison 7.1"
-				php="php7.1"
-			else
-				echo "No PHP file found... defaulting to PHP7.0"
-				php="php7.0"
-			fi
+		if [ $currentuser = "runcloud" ]
+		then
+			echo "Current user is runcloud... not cool..."
+			echo "Using root domain name to generate remote username..."
+			rootdomain=$(echo $appdomain | awk -F\. '{print $(NF-1) FS $NF}')
+			currentuser=${rootdomain%.*}
+			echo "New Username is... $currentuser"
+		fi
 
-			echo "Creating New System User $currentuser on Target Server $targetserver..."
-			serverpilot sysusers create $targetID $currentuser
-			serverpilot find sysusers serverid=$targetID > /var/tmp/primemover/new-server-users.txt
-			sed -r -n -e /$currentuser/p /var/tmp/primemover/new-server-users.txt > /var/tmp/primemover/new-user-details.txt
-	
-		  	newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
-		  	#echo "New User ID Column is $newuserIDCOL"
-	
-			if [ $newuserIDCOL -eq 1 ] 
-			then
-				newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
-			elif [ $newuserIDCOL -eq 2 ]
-			then
-				newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
-			else
-				newuserID=$(awk '{print $3}' /var/tmp/primemover/new-user-details.txt)
-			fi
-	
-			randpass=$(openssl rand -base64 12)
-			echo "New User $currentuser on Server $targetserver has ID $newuserID"
-			serverpilot sysusers update $newuserID password $randpass
-			echo "... and now has new random password $randpass"
-
-			echo "Copy WP Site with WWW Domain..."
-			# Export the Database
-			wp db export database.sql --allow-root
-			chmod 600 database.sql
-			echo "DB Exported..."
-
-			#Need to get the DB prefix from wp-config... 
-			tableprefix=$(sed -n -e '/$table_prefix/p' wp-config.php)
-			echo $tableprefix > table.prefix
-			echo "Database Prefix Exported..."
-
-			# Tar everything up
-			echo "Creating Compressed Tarball of entire site... PLEASE WAIT!!!"
-			#tar -czf ../wp-migrate-file.gz . --exclude '*.zip' --exclude '*.gz' --exclude 'wp-config.php'
-			tar -cf - . -P --exclude '*.zip' --exclude '*.gz' --exclude 'wp-config.php' | pv -s $(du -sb . | awk '{print $1}') | gzip > ../wp-migrate-file.gz
-			sleep 2
-			echo "Compressed Tarball is Ready to Ship..."
-			rm database.sql
-			rm table.prefix
-			echo "Exported SQL File Deleted..."
-	
-			#Make sure we don't have any underscores...
-			echo $appname > tempfile
-			appname=$(sed 's/\_/-/g' tempfile)
-			rm tempfile
-	
-			serverpilot apps create $appname $newuserID $php '["'$appdomain'","www.'$appdomain'"]' '{"site_title":"'$appname'","admin_user":"WZRD","admin_password":"P@55W0RD12345","admin_email":"info@wzrd.co"}'
-			sleep 1
-			echo "Remote Application Step Completed... or did it?"
-			ssh-keyscan $targetIP >> ~/.ssh/known_hosts
-			sshpass -p "$randpass" ssh-copy-id $currentuser@$targetIP
-			scp ../wp-migrate-file.gz $currentuser@$targetIP:/srv/users/$currentuser/apps/$appname/public/wp-migrate-file.gz
-			sleep 2
+		# THIS IS ALL REALLY SHITTY AND REDUNDANT - GOTTA GO
 		
-			echo "Running remote restoration process..."
-			sshpass -p "$randpass" ssh $currentuser@$targetIP "sleep 2 && cd /srv/users/$currentuser/apps/$appname/public && restoreWP" < /dev/null # This dev/null - I *believe* fixed the problem with only one line being processed
-			echo "Remote restoration... done???"
-		
-			echo "This was the fullpath we just completed... $fullpath."
-		
-			echo "Continuing..."
-		
-			# Try to store all these details...
-			if [ -z $setClone ]
-			then
-				echo "We're gonna write these details to the spot now..."
-			
-				echo -e $dir $targetIP $currentuser $appname $newuserID $appdomain >> /root/cloneserver.lock
+		# We're going to need to know the PHP version... somehow...
+		# FIND PHP HERE!!!
+		if [ -f "/etc/php56rc/fpm.d/$appname.conf" ]
+		then
+			echo "PHP56RC file found... setting PHP to verison 5.6"
+			php="php5.6"
+		elif [ -f "/etc/php70rc/fpm.d/$appname.conf" ]
+		then
+			echo "PHP70RC file found... setting PHP to verison 7.0"
+			php="php7.0"
+		elif [ -f "/etc/php71rc/fpm.d/$appname.conf" ]
+		then
+			echo "PHP71RC file found... setting PHP to verison 7.1"
+			php="php7.1"
+		else
+			echo "No PHP file found... defaulting to PHP7.0"
+			php="php7.0"
+		fi
 
-				echo "What we do next with them... is entirely up to you!"
-			fi
-		done <"/var/tmp/primemover/wp-sites.txt"
-	fi
+		echo "Creating New System User $currentuser on Target Server $targetserver..."
+		serverpilot sysusers create $targetID $currentuser
+		serverpilot find sysusers serverid=$targetID > /var/tmp/primemover/new-server-users.txt
+		sed -r -n -e /$currentuser/p /var/tmp/primemover/new-server-users.txt > /var/tmp/primemover/new-user-details.txt
+
+	  	newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
+	  	#echo "New User ID Column is $newuserIDCOL"
+
+		if [ $newuserIDCOL -eq 1 ] 
+		then
+			newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
+		elif [ $newuserIDCOL -eq 2 ]
+		then
+			newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
+		else
+			newuserID=$(awk '{print $3}' /var/tmp/primemover/new-user-details.txt)
+		fi
+
+		randpass=$(openssl rand -base64 12)
+		echo "New User $currentuser on Server $targetserver has ID $newuserID"
+		serverpilot sysusers update $newuserID password $randpass
+		echo "... and now has new random password $randpass"
+
+		echo "Copy WP Site with WWW Domain..."
+		
+		PackageSite
+		
+		#Make sure we don't have any underscores...
+		echo $appname > tempfile
+		appname=$(sed 's/\_/-/g' tempfile)
+		rm tempfile
+
+		serverpilot apps create $appname $newuserID $php '["'$appdomain'","www.'$appdomain'"]' '{"site_title":"'$appname'","admin_user":"WZRD","admin_password":"P@55W0RD12345","admin_email":"info@wzrd.co"}'
+		sleep 1
+		echo "Remote Application Step Completed... or did it?"
+		ssh-keyscan $targetIP >> ~/.ssh/known_hosts
+		sshpass -p "$randpass" ssh-copy-id $currentuser@$targetIP
+		scp ../wp-migrate-file.gz $currentuser@$targetIP:/srv/users/$currentuser/apps/$appname/public/wp-migrate-file.gz
+		sleep 2
+	
+		echo "Running remote restoration process..."
+		sshpass -p "$randpass" ssh $currentuser@$targetIP "sleep 2 && cd /srv/users/$currentuser/apps/$appname/public && restoreWP" < /dev/null # This dev/null - I *believe* fixed the problem with only one line being processed
+		echo "Remote restoration... done???"
+	
+		echo "This was the fullpath we just completed... $fullpath."
+	
+		echo "Continuing..."
+
 }
 
 StartDomainLogging() {
@@ -1516,9 +1491,10 @@ PushToRC() {
 	
 	if [[ $run == "1" ]]
 	then
-		ssh root@$targetIP "sleep 3 && wget https://github.com/gridpane/prime-mover/archive/master.zip && unzip master.zip && mv prime-mover-master/primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && primemover restore" < /dev/null
+		ssh root@$targetIP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && echo $finaldomain > source.domain && primemover restore" < /dev/null
 	else
-		ssh root@$targetIP "sleep 3 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && primemover restore" < /dev/null
+		#ssh root@$targetIP "sleep 3 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && primemover restore" < /dev/null
+		ssh root@$targetIP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && echo $finaldomain > source.domain && primemover restore" < /dev/null
 	fi
 	
 	sleep 1
@@ -1575,7 +1551,7 @@ SPtoRC() {
 	GetSPApps
 	
 	echo ""
-	echo "To begin initializing ALL apps press ENTER... NOTE: User passwords will be reset on target node!"
+	echo "To begin initializing ALL apps press ENTER... NOTE: Destination sites must already be built inside of RunCloud!!!"
 
 	read desiredapps
 
@@ -1628,18 +1604,41 @@ SimpleSimon() {
 	echo ""
 	echo "Please choose from one of the following options..."
 	echo ""
-	echo "1.) Migrate sites from ServerPilot Server to a GridPane Server"
-	echo ""
-	echo "2.) Migrate sites from RunCloud Server to a GridPane Server"
-	echo ""
-	echo "3.) Migrate sites from ServerPilot Server to a ServerPilot Server"
-	echo ""
-	echo "4.) Migrate sites from RunCloud Server to RunCloud Server"
-	echo ""
-	echo "5.) Migrate sites from ServerPilot Server to RunCloud Server"
-	echo ""
-	echo "6.) Migrate sites from RunCloud Server to ServerPilot Server"
-	echo ""
+	
+	if [[ $envir == "SP" ]]
+	then
+		echo "1.) Migrate sites all local sites to a GridPane Server"
+		echo ""
+		echo "2.) Migrate sites all local sites to a RunCloud Server"
+		echo ""
+		echo "3.) Migrate sites all local sites to another ServerPilot Server"
+		echo ""
+	elif [[ $envir == "RC" ]]
+	then
+		echo "A.) Migrate sites all local sites to GridPane Server"
+		echo ""
+		echo "B.) Migrate sites all local sites to a ServerPilot Server"
+		echo ""
+		echo "C.) Migrate sites all local sites to another RunCloud Server"
+		echo ""
+	elif [[ $envir == "GP" ]] 
+	then
+		echo "X.) Migrate sites all local sites to another GridPane Server"
+		echo ""
+	elif [[ $envir == "EE" ]] 
+	then
+		echo "Y.) Migrate sites all local sites to a GridPane Server"
+		echo ""
+	elif [[ $envir == "CP" ]] 
+	then
+		echo "Z.) Migrate sites all local sites to a GridPane Server"
+		echo ""
+	else
+		echo "We don't currently support your control panel or you have a non-standard installation."
+		echo "Sorry, EXITING!"
+		exit 187;
+	fi
+	
 	read MigrateInput < /dev/tty
 	
 	if [[ $MigrateInput == "1" ]]
@@ -1647,19 +1646,28 @@ SimpleSimon() {
 		MigrateType=SP2GP
 	elif [[ $MigrateInput == "2" ]]
 	then
-		MigrateType=RC2GP
+		MigrateType=SP2RC
 	elif [[ $MigrateInput == "3" ]]
 	then
 		MigrateType=SP2SP
-	elif [[ $MigrateInput == "4" ]]
+	elif [[ $MigrateInput == "A" ]] || [[ $MigrateInput == "a" ]]
 	then
-		MigrateType=RC2RC
-	elif [[ $MigrateInput == "5" ]]
-	then
-		MigrateType=SP2RC
-	elif [[ $MigrateInput == "6" ]]
+		MigrateType=RC2GP
+	elif [[ $MigrateInput == "B" ]] || [[ $MigrateInput == "b" ]]
 	then
 		MigrateType=RC2SP
+	elif [[ $MigrateInput == "C" ]] || [[ $MigrateInput == "c" ]]
+	then
+		MigrateType=RC2RC
+	elif [[ $MigrateInput == "X" ]] || [[ $MigrateInput == "x" ]]
+	then
+		MigrateType=GP2GP
+	elif [[ $MigrateInput == "Y" ]] || [[ $MigrateInput == "y" ]]
+	then
+		MigrateType=EE2CP
+	elif [[ $MigrateInput == "Z" ]] || [[ $MigrateInput == "z" ]]
+	then
+		MigrateType=CP2GP
 	else
 		echo "You entered something weird - exiting!"
 		exit 187;
@@ -1669,37 +1677,35 @@ SimpleSimon() {
 
 }
 
-
 WhatPlatform() {
 	
 	if [ -d /opt/gridpane ]
 	then
 		echo "This is a GridPane provisioned server..."
 		envir="GP"
-		gpDomains
+		#gpDomains
 	elif [ -d "/etc/nginx-sp" ]
 	then
 		echo "This is a ServerPilot managed VPS..."
 		envir="SP"
-		spDomains
+		#spDomains
 	elif [ -d "/etc/nginx-rc/" ]
 	then
 		echo "This is a RunCloud managed VPS..."
 		envir="RC"
-		rcDomains
+		#rcDomains
 	elif [ -f "/usr/local/cpanel/cpanel" ]
 	then
 		echo "This is a CPanel managed VPS..."
 		echo "CPANEL MIGRATIONS ARE HIGHLY EXPERIMENTAL!!!"
 		ECHO " YOU'VE BEEN WARNED, HOMESLICE"
 		envir="CP"
-		cpDomains
+		#cpDomains
 	elif [ -f "/usr/local/bin/ee" ]
 	then
 		echo "This is a EasyEngine install... "
 		envir="EE"
-		gpDomains
-
+		#gpDomains
 	else
 		echo "We don't yet have support for Plesk/CPanel or similar shared hosting environments."
 		echo "Sorry. Deuces."
@@ -1743,11 +1749,19 @@ LoopLocalSites() {
 
 }
 
-GetRCDestDetails() {
+SPtoGP() {
 	
-	echo "What is the destination directory path on your RunCloud server for this site?"
-	echo ""
-	read RCPath < /dev/tty
+	spDomains
+	
+	DoWork
+
+}
+
+RCtoGP() {
+	
+	rcDomains
+	
+	DoWork
 
 }
 
@@ -1805,11 +1819,66 @@ ImportDB() {
 
 UpdateURL() {
 	
-	sourceURL=$(awk '{print $1; exit}' source.domain)
+	if [[ $envir == "RC" ]]
+	then
+		sourceURL=$(awk '{print $1; exit}' /home/$username/webapps/$appname/source.domain)
+		
+		cd /home/$username/webapps/$appname/
+		
+		echo "Replacing the source domain $sourceURL with the destination domain of $finaldomain"
+		
+		PATH=/RunCloud/Packages/php70rc/bin:/RunCloud/Packages/httpd-rc/bin:$PATH
+		
+		echo "Current path is... $PATH"
+		
+		URLResult=$(/usr/local/bin/wp search-replace ''$sourceURL'' ''$finaldomain'' --allow-root)
+		
+		echo "Result of search/replace is $URLResult"
 	
-	wp db search-replace ''$sourceURL'' ''$finaldomain'' --allow-root
+		rm /home/$username/webapps/$appname/source.domain
+		
+	elif [[ $envir == "SP" ]]
+	then
+		sourceURL=$(awk '{print $1; exit}' /srv/users/$username/apps/$appname/public/source.domain)
+		
+		cd /srv/users/$username/apps/$appname/public
+		
+		echo "Replacing the source domain $sourceURL with the destination domain of $finaldomain"
+		
+		PATH=/RunCloud/Packages/php70rc/bin:/RunCloud/Packages/httpd-rc/bin:$PATH
+		
+		echo "Current path is... $PATH"
 	
-	rm source.domain
+		URLResult=$(/usr/local/bin/wp search-replace ''$sourceURL'' ''$finaldomain'' --allow-root)
+		
+		echo "Result of search/replace is $URLResult"
+
+		rm /srv/users/$username/apps/$appname/public/source.domain
+		
+	elif [[ $envir == "GP" ]]
+	then
+		sourceURL=$(awk '{print $1; exit}' /var/www/$appname/htdocs/source.domain)
+		
+		cd /var/www/$appname/htdocs/
+		
+		echo "Replacing the source domain $sourceURL with the destination domain of $finaldomain"
+		
+		PATH=/RunCloud/Packages/php70rc/bin:/RunCloud/Packages/httpd-rc/bin:$PATH
+		
+		echo "Current path is... $PATH"
+	
+		URLResult=$(/usr/local/bin/wp search-replace ''$sourceURL'' ''$finaldomain'' --allow-root)
+		
+		echo "Result of search/replace is $URLResult"
+
+		rm /var/www/$appname/htdocs/source.domain
+		
+	else
+		echo "We don't know how to update URLs for this control panel...???"
+		echo "Sorry, EXITING!!!"
+		exit 187;
+	fi
+		
 
 }
 
@@ -1817,7 +1886,7 @@ DoWork() {
 	
 	# Do Work Son...
 
-	WhatPlatform # Now we where we're coming from and we SHOULD know all the domains as well...
+	#WhatPlatform # Now we where we're coming from and we SHOULD know all the domains as well...
 
 	if [ "$site_to_clone" == "ALL" ] || [ "$site_to_clone" == "all" ]
 	then 		
@@ -1897,6 +1966,7 @@ CheckMode() {
 	
 		echo "Migrating from a RunCloud server to another RunCloud Server..."
 		envir=RC
+		RCtoRC
 
 	elif [[ $MigrateType == "RC2SP" ]] || [[ $MigrateType == "rc2sp" ]]
 	then
@@ -1904,23 +1974,31 @@ CheckMode() {
 		echo "Migrating from a RunCloud Server to a ServerPilot Server..."
 		envir=RC
 		GetWPAdmin
+		RCtoSP
 
 	elif [[ $MigrateType == "RC2GP" ]] || [[ $MigrateType == "rc2gp" ]]
 	then
 	
 		echo "Migrating from a RunCloud Server to a GridPane Server..."
 		envir=RC
+		RCtoGP
 
 	elif [[ $MigrateType == "SP2GP" ]] || [[ $MigrateType == "sp2gp" ]]
 	then
 	
 		echo "Migrating from a ServerPilot Server to a GridPane Server..."
 		envir=SP
+		GetWPAdmin
+		ServerPilotShell
+		SPtoGP
 
 	else
 	
 		echo "No command line input..."
 		#echo "I guess I could ask a bunch of Simple Simon Questions..."
+		
+		WhatPlatform
+		
 		SimpleSimon
 	
 	fi
@@ -1936,6 +2014,8 @@ DoRestore() {
 	then
 	
 		echo "This looks like a ServerPilot server..."
+		
+		envir=SP
 	
 		tableprefix=$(cat table.prefix)
 		sed -i "/$table_prefix =/c\\$tableprefix" wp-config.php
@@ -1949,15 +2029,19 @@ DoRestore() {
 		cd ../..
 		username=$PWD
 		username=$(basename $username)
-	
-		chown -R $username:$username /srv/users/$username/apps/$appname/public/*
 		
-		# NEED TO DO A FIND/REPLACE IN THE DB FOR THIS SITE HERE...
+		SingleSPDomain
+		
+		UpdateURL
+		
+		chown -R $username:$username /srv/users/$username/apps/$appname/public/*
 	
 	elif [[ $appname == "htdocs" ]]
 	then
 	
 		echo "This looks like a GridPane server..."
+		
+		envir=GP
 	
 		tableprefix=$(cat table.prefix)
 		sed -i "/$table_prefix =/c\\$tableprefix" ../wp-config.php
@@ -1970,14 +2054,18 @@ DoRestore() {
 		appname=$(basename $currdir)
 		#GridPane is currently single user...
 		username=www-data
-	
-		chown -R $username:$username /var/www/$appname/htdocs/*
 		
-		# NEED TO DO A FIND/REPLACE IN THE DB FOR THIS SITE HERE...
+		SingleGPDomain
+		
+		UpdateURL
+		
+		chown -R $username:$username /var/www/$appname/htdocs/*
 	
 	else
 	
 		echo "This looks like a RunCloud server..."
+		
+		envir=RC
 	
 		tableprefix=$(cat table.prefix)
 		sed -i "/$table_prefix =/c\\$tableprefix" wp-config.php
@@ -1988,15 +2076,12 @@ DoRestore() {
 		cd ../..
 		username=$PWD
 		username=$(basename $username)
-	
-		chown -R $username:$username /home/$username/webapps/$appname/*
 		
 		SingleRCDomain
 		
 		UpdateURL
 		
-		# NEED TO DO A FIND/REPLACE IN THE DB FOR THIS SITE HERE...
-	
+		chown -R $username:$username /home/$username/webapps/$appname/*
 	
 	fi
 	

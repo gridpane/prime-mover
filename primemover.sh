@@ -139,13 +139,15 @@ ServerPilotShell() {
 # Check is SSH key present, if not make it so... This currently only applies to migrating IN to GridPane servers... 
 # Disabled by default because while I may be a total egotistical prick I recognize that you're MUCH more likely to be running on a SP or RC node than a GridPane managed box.
 
-DoSSHForGridPane() {
+DoSSH() {
 	
 	if [ "$y" = "1" ]
 	then
 		echo "An error was detected during a previous function, skipping the site packaging step for this site..."
 		return 1
 	fi
+	
+	remote_IP=$1
 	
 	ipaddress=$(curl http://ip4.ident.me 2>/dev/null)
 	
@@ -163,6 +165,8 @@ DoSSHForGridPane() {
 		
 	fi
 	
+	echo "Checking remote connection to $remote_IP..."
+	
 	sshcheck=$(ssh-keygen -F $remote_IP 2>&1)
 	
 	if [ $? -eq 0 ]
@@ -170,86 +174,31 @@ DoSSHForGridPane() {
 		echo "Remote host is already in the Known Hosts file..."
 		echo ""
 	else
+		
+		echo "Adding remote system at $remote_IP..."
+		
 		ssh-keyscan $remote_IP >> /root/.ssh/known_hosts
-		curl -F "ssh_key=@/root/.ssh/id_rsa.pub" -F "source_ip=$ipaddress" -F "failover_ip=$remote_IP" https://my.gridpane.com/api/pair-external-servers?api_token=$gridpanetoken
-		echo "Remote host added to the Known Hosts file..." 
-		echo ""
+		
+		echo "Remote host $remote_IP added to the known hosts file..."
 	fi
 	
 	sshtatus=$(ssh -o BatchMode=yes -o ConnectTimeout=5 $remote_IP echo ok 2>&1)
 	
-	if [ $sshtatus == "ok" ]
+	if [ "$sshtatus" == "ok" ]
 	then
 		echo "Remote SSH Test Successful..." 
 	else
-		echo "Establishing remote connection to target..." 
-		curl -F "ssh_key=@/root/.ssh/id_rsa.pub" -F "source_ip=$ipaddress" -F "failover_ip=$remote_IP" https://my.gridpane.com/api/pair-external-servers?api_token=$gridpanetoken
-	fi
-
-}
-#DoSSHForGridPane
-
-SSHKeyShare() {
-	
-	# This allows the user to do a SSH key exchange from the current server to their target...
-	
-	ssh-copy-id -i ~/.ssh/id_rsa.pub root@$targetIP
-
-}
-
-# Old Original MoveWP Code... Needs LOTS o' work!
-
-MoveTHISHere() {
-	
-	# Moves a site from the local directory to... elsewhere
-	
-	currentdirectory=$(pwd)
-	echo "Current Working Directory is... $currentdirectory"
-
-	if [ -f wp-config.php ]
-	then
-	
-		PackageSite
-		
-		echo "Complete Wordpress Site Backed Up"
-	
-		# Copy things to the remote server...
-	
-		ssh-keyscan $targetIP >> ~/.ssh/known_hosts
-	
-		sshpass -p "$remotePass" ssh-copy-id $remoteUser@$targetIP
-	
-		sleep 2
-	
-		echo "Copying Compressed Migration File to Remote Server"
-	
-		echo "Please wait..."
-	
-		#sshpass -p "$remotePass" scp -o StrictHostKeyChecking=no ../wp-migrate-file.gz $remoteUser@$targetIP:$remoteFolder/wp-migrate-file.gz
-	
-		scp ../wp-migrate-file.gz $remoteUser@$targetIP:$remoteFolder/wp-migrate-file.gz
-	
-		rm ../wp-migrate-file.gz
-	
-		echo "Things either worked or they didn't... but everything has been deleted so you can always try again."
-	
-		# You could run restoreWP on the remote server... assuming it's there...
-	
-		echo "Do you want to run restoreWP on the remote server? - Press enter for Yes... Any input for No"
-	
-		read DoRestore
-	
-		if [ -z $DoRestore ]
+		if [[ $MigrateType == "RC2GP" ]] || [[ $MigrateType == "SP2GP" ]] || [[ $MigrateType == "GP2GP" ]]
 		then
-			echo "Running remote restoration process..."
-			sshpass -p "$remotePass" ssh $remoteUser@$targetIP "sleep 2 && cd $remoteFolder && restoreWP" # THIS WILL FAIL BECAUSE THEY DON'T HAVE restoreWP !!!!
-			echo "Remote restoration... done???"
+			curl -F "ssh_key=@/root/.ssh/id_rsa.pub" -F "source_ip=$ipaddress" -F "failover_ip=$remote_IP" https://my.gridpane.com/api/pair-external-servers?api_token=$gridpanetoken
+			echo "Remote host added to the Known Hosts file..." 
+			echo ""
+		else
+			echo "Attempting to connect to remote system at $remote_IP..."
+	
+			ssh-copy-id -i ~/.ssh/id_rsa.pub root@$remote_IP
 		fi
-	
-		echo "Done and done."
-	
-	else
-		echo "This is not a Wordpress Directory... try again."
+			
 	fi
 
 }
@@ -309,7 +258,9 @@ GetSPUserAppDetails() {
 
 PushToSP() {
 	
-	echo "Creating New System User $currentuser on Target Server $targetserver..."
+	#echo "Creating New System User $currentuser on Target Server $targetserver..."
+	
+	targetID=$(serverpilot find servers lastaddress=$targetserver id)
   
 	if [[ $currentuser == "serverpilot" ]]
 	then
@@ -320,10 +271,10 @@ PushToSP() {
 		newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
 		#echo "New User ID Column is $newuserIDCOL"
 
-		if [ $newuserIDCOL -eq 1 ] 
+		if [[ $newuserIDCOL -eq 1 ]] 
 		then
 			newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
-		elif [ $newuserIDCOL -eq 2 ]
+		elif [[ $newuserIDCOL -eq 2 ]]
 		then
 			newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
 		else
@@ -340,6 +291,10 @@ PushToSP() {
 	#TARBALL THE SITE
 	
 	PackageSite
+	
+	echo "Default WP admin credentials are user $admin_user with email address $admin_email with pass $admin_password..."
+	
+	echo "Getting ready to build site $appdomain for application $appname for user ID $newuserID on PHP version $php ..."
 
 	serverpilot apps create $appname $newuserID $php '["'$appdomain'","www.'$appdomain'"]' '{"site_title":"'$appname'","admin_user":"'$admin_user'","admin_password":"'$admin_password'","admin_email":"'$admin_email'"}'
 
@@ -347,7 +302,7 @@ PushToSP() {
 	
 	sleep 5
   
-	scp /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz root@$targetIP:/srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz
+	scp $sitepack root@$remote_IP:/srv/users/$currentuser/apps/$appname/primemover-$appname-migration-file.gz
 	
 	sleep 1
   
@@ -355,10 +310,9 @@ PushToSP() {
 	
 	if [[ $run == "1" ]]
 	then
-		ssh root@$targetIP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && echo $finaldomain > source.domain && primemover restore" < /dev/null
+		ssh root@$remote_IP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$currentuser/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$currentuser/apps/$appname/public/ --overwrite && cd /srv/users/$currentuser/apps/$appname/public && echo $finaldomain > source.domain && primemover restore" < /dev/null
 	else
-		#ssh root@$targetIP "sleep 3 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && primemover restore" < /dev/null
-		ssh root@$targetIP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$username/apps/$appname/public/ --overwrite && cd /srv/users/$username/apps/$appname/public && echo $finaldomain > source.domain && primemover restore" < /dev/null
+		ssh root@$remote_IP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /srv/users/$currentuser/apps/$appname/primemover-$appname-migration-file.gz -C /srv/users/$currentuser/apps/$appname/public/ --overwrite && cd /srv/users/$currentuser/apps/$appname/public && echo $finaldomain > source.domain && primemover restore" < /dev/null
 	fi
 	
 	sleep 1 
@@ -459,10 +413,10 @@ PickTargetSP() {
 	servernames=$(cat /var/tmp/primemover/server-names.txt)
 
 	targetID=$(echo "$serveridsource" | sed -n "$targetServer"p)
-	targetIP=$(serverpilot find servers id=$targetID lastaddress)
+	remote_IP=$(serverpilot find servers id=$targetID lastaddress)
 	echo ""
 	echo ""
-	echo "The target server has an ID of... $targetID... with IP Address $targetIP"
+	echo "The target server has an ID of... $targetID... with IP Address $remote_IP"
 	echo ""
 	echo "The source server has an ID of... $sourceID... with IP Address $sourceIP"
 	echo ""
@@ -539,10 +493,10 @@ MakeSPUser() {
   	newuserIDCOL=$(awk -v name='id' '{for (i=1;i<=NF;i++) if ($i==name) print i; exit}' /var/tmp/primemover/new-server-users.txt)
   	#echo "New User ID Column is $newuserIDCOL"
 
-	if [ $newuserIDCOL -eq 1 ] 
+	if [[ $newuserIDCOL -eq 1 ]] 
 	then
 		newuserID=$(awk '{print $1}' /var/tmp/primemover/new-user-details.txt)
-	elif [ $newuserIDCOL -eq 2 ]
+	elif [[ $newuserIDCOL -eq 2 ]]
 	then
 		newuserID=$(awk '{print $2}' /var/tmp/primemover/new-user-details.txt)
 	else
@@ -570,12 +524,10 @@ RCtoSP() {
 	echo "Getting all local RunCloud site domains..."
 	rcDomains
 	
-	#Get Default WP Admin Creds...
-	GetWPAdmin
-	
+	echo ""
 	echo "Are we moving all of these sites to the same server? Please enter YES or NO..."
 	
-	ready SameSPforAll < /dev/tty
+	read SameSPforAll < /dev/tty
 	
 	if [[ $SameSPforAll == "YES" ]] || [[ $SameSPforAll == "yes" ]] || [[ $SameSPforAll == "Yes" ]] || [[ $SameSPforAll == "Y" ]] || [[ $SameSPforAll == "y" ]]
 	then
@@ -583,11 +535,12 @@ RCtoSP() {
 		
 		echo "What is the remote IP of the target ServerPilot server?"
 		
-		read $targetserver < /dev/tty
+		read targetserver < /dev/tty
 		
-		targetIP=$targetserver
+		#remote_IP="$targetserver"
 		
-		SSHKeyShare
+		DoSSH $targetserver
+		
 	else
 		echo "We'll gather a different IP address for each site during the migration..."
 	fi
@@ -639,11 +592,11 @@ RCtoSP() {
 				
 				echo "You'll need the root password for the remote ServerPilot system and root password login access will need to be ON."
 			
-				read $targetserver < /dev/tty
+				read targetserver < /dev/tty
 				
-				targetIP=$targetserver
+				#remote_IP="$targetserver"
 		
-				SSHKeyShare
+				DoSSH $targetserver
 				
 			fi
 			
@@ -662,7 +615,7 @@ RCtoSP() {
 			appname=$(sed 's/\_/-/g' tempfile)
 			rm tempfile
 			
-			#BuildSPSite
+			appdomain=$site_to_clone
 			
 			PushToSP
 			
@@ -806,6 +759,7 @@ rcDomains() {
 	echo ""
 	echo ""
 	read -t 10 -n 1 -s -r -p "Press any key to confirm or wait ten seconds..." ;
+	echo ""
 
 sort -k5 -n /var/tmp/primemover.domains.tmp > /var/tmp/primemover.domains.tmp2
 
@@ -920,6 +874,7 @@ spDomains() {
 	echo ""
 	echo ""
 	read -t 10 -n 1 -s -r -p "Press any key to confirm or wait ten seconds..." ;
+	echo ""
 
 
 sort -k5 -n /var/tmp/primemover.domains.tmp > /var/tmp/primemover.domains.tmp2
@@ -953,6 +908,7 @@ cpDomains() {
 	echo ""
 	echo ""
 	read -t 10 -n 1 -s -r -p "Press any key to confirm or wait ten seconds..." ;
+	echo ""
 
 
 sort -k5 -n /var/tmp/primemover.domains.tmp > /var/tmp/primemover.domains.tmp2
@@ -1106,6 +1062,7 @@ gpDomains() {
 	echo ""
 	echo ""
 	read -t 10 -n 1 -s -r -p "Press any key to confirm or wait ten seconds..." ;
+	echo ""
 
 
 sort -k5 -n /var/tmp/primemover.domains.tmp > /var/tmp/primemover.domains.tmp2
@@ -1469,17 +1426,15 @@ CoreSiteLoop() {
 PushToRC() {
 	
 	echo "What is the IP address of your target RunCloud Server?"
-	read RCRemoteIP < /dev/tty
+	read targetserver < /dev/tty
 	
 	echo "You'll need to have a root password for the remote RunCloud."
 	
 	echo "Getting ready to connect to target server..."
 	
-	sleep 3
+	sleep 1
 	
-	targetIP=$RCRemoteIP
-	
-	SSHKeyShare
+	DoSSH "$targetserver"
 	
 	#example... 45.63.75.240
 	
@@ -1506,7 +1461,7 @@ PushToRC() {
 	
 	echo "Copying to remote RunCloud Server..."
   
-	scp /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz root@$targetIP:/home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz
+	scp /srv/users/$username/apps/$appname/primemover-$appname-migration-file.gz root@$remote_IP:/home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz
 	
 	sleep 1
   
@@ -1514,10 +1469,10 @@ PushToRC() {
 	
 	if [[ $run == "1" ]]
 	then
-		ssh root@$targetIP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && echo $finaldomain > source.domain && primemover restore" < /dev/null
+		ssh root@$remote_IP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && echo $finaldomain > source.domain && primemover restore" < /dev/null
 	else
-		#ssh root@$targetIP "sleep 3 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && primemover restore" < /dev/null
-		ssh root@$targetIP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && echo $finaldomain > source.domain && primemover restore" < /dev/null
+		#ssh root@$remote_IP "sleep 3 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && primemover restore" < /dev/null
+		ssh root@$remote_IP "sleep 3 && wget https://www.dropbox.com/s/1wpxv8kr9bfqz8i/primemover.sh && mv primemover.sh /usr/local/bin/primemover && chmod +x /usr/local/bin/primemover && sleep 1 && tar -xzf /home/$RCusername/webapps/$RCappname/primemover-$RCappname-migration-file.gz -C /home/$RCusername/webapps/$RCappname/ --overwrite && cd /home/$RCusername/webapps/$RCappname/ && echo $finaldomain > source.domain && primemover restore" < /dev/null
 	fi
 	
 	sleep 1

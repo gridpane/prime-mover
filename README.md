@@ -56,7 +56,7 @@ As this was built from our internal tools it obviously works best for migrating 
 
 I'm not planning to build a version of this that doesn't explicitly use SSH keys. Knock yourself out.
 
-I am also not planning on building a version of this which allows migration into CPanel/Plesk/similar as this is not the best stack for WordPress. 
+I am also not planning on building a version of this which allows migration into CPanel/Plesk/similar. It's complicated enough getting sites OUT of CPanel and given that they don't have API site builds it's even more complicated to try to get sites to migrate in. This could be built obviously but you'd always need to manually build the sites at the destination. 
 
 I will eventually build in the necessary mechanisms to migrate sites out of GridPane and into these other control panels but this is not a priority at this moment as I've yet to have anyone request this. All of the code required to do so is actually already there, if you know what you're looking for. 
 

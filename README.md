@@ -2,7 +2,7 @@
 
 # CAUTION!!!
 
-This is all VERY aplha right now. This isn't anything inherently "destructive" about this script other than the fact that it can theoretically fill your hard drive up in the process of making tar/gz clones of all of your sites. 
+This is all VERY alpha right now. This isn't anything inherently "destructive" about this script other than the fact that it can theoretically fill your hard drive up in the process of making tar/gz clones of all of your sites. 
 
 *Use at your own risk!*
 

@@ -8,7 +8,7 @@ This is all VERY alpha right now. This isn't anything inherently "destructive" a
 
 # Description: 
 
-PrimeMover.sh is a bash script that facilitates migration of WordPress sites into and out of servers managed by GridPane.com, ServerPilot, RunCloud, and some CPanel installations (currently only out of CPanel). 
+PrimeMover.sh is a bash script that facilitates migration of WordPress sites into and out of servers managed by [GridPane.com](https://gridpane.com), ServerPilot, RunCloud, and some CPanel installations (currently only out of CPanel). 
 
 This is a somewhat neutered version of the MigrateSafely migration tool we use internally at GridPane.com to migrate sites into our clients servers. 
 

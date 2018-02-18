@@ -15,11 +15,15 @@ This is a somewhat neutered version of the MigrateSafely migration tool we use i
 Currently the following migrations are tested and working:
 
 ServerPilot -> GridPane servers *WORKS*
+
 RunCloud -> GridPane servers *WORKS*
+
 EasyEngine/Webinoly -> GridPane servers *WORKS*
+
 Some "Stock" Cpanel -> GridPane servers *WORKS*
 
 ServerPilot -> ServerPilot *WORKS*
+
 ServerPilot -> RunCloud *WORKS* (Sites must be manually built in RunCloud FIRST)
 
 RunCloud -> ServerPilot *WORKS* (Single User - i.e. "runcloud" to "serverpilot")

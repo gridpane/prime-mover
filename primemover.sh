@@ -49,6 +49,10 @@ MeImCounting
 
 CommandVariablesCheck() {
 	
+	#THIS IS OLD AND WILL SOON BE KILLED!!!
+	#THIS IS OLD AND WILL SOON BE KILLED!!!
+	#THIS IS OLD AND WILL SOON BE KILLED!!!
+	
 	# Checking correct startup variables
 	if [ -z "$1" ] || [ -z "$2" ] 
 	then
@@ -511,6 +515,8 @@ MakeSPUser() {
 }
 
 BuildSPSite() {
+	
+	#MEH... This is gonna go.
 	
 	serverpilot apps create $appname $newuserID $php '["'$appdomain'","www.'$appdomain'"]' '{"site_title":"'$appname'","admin_user":"'$admin_user'","admin_password":"'$admin_password'","admin_email":"'$admin_email'"}'
 	
@@ -1731,6 +1737,8 @@ SPtoGP() {
 	
 	spDomains
 	
+	$site_to_clone="ALL"
+	
 	DoWork
 
 }
@@ -1738,6 +1746,8 @@ SPtoGP() {
 RCtoGP() {
 	
 	rcDomains
+	
+	$site_to_clone="ALL"
 	
 	DoWork
 
